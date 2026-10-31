@@ -16,11 +16,11 @@ const FLOW = [
 ];
 
 const IDDSI = [
-  { level: 3, name: "Liquide très épais", detail: "Tient dans la cuillère, glisse si on l’incline." },
-  { level: 4, name: "Purée lisse", detail: "Sans morceau. Garde sa forme dans l’assiette.", active: true },
-  { level: 5, name: "Haché et lubrifié", detail: "Morceaux tendres, 4 mm maximum chez l’adulte." },
-  { level: 6, name: "Petits morceaux", detail: "Tendre, 1,5 cm maximum. Se coupe à la fourchette." },
-  { level: 7, name: "Texture habituelle", detail: "Sans restriction, parfois « facile à mâcher »." },
+  { level: 3, name: "Liquide très épais", detail: "Ne s’écoule pas en continu. Tient dans la cuillère." },
+  { level: 4, name: "Purée lisse", detail: "Consistance homogène, sans aucun morceau." },
+  { level: 5, name: "Haché et lubrifié", detail: "Morceaux tendres ≤ 4 mm, mélangés à une sauce." },
+  { level: 6, name: "Petits morceaux", detail: "≤ 1,5 cm. Se coupe ou s’écrase au bord de la fourchette." },
+  { level: 7, name: "Texture habituelle", detail: "Sans restriction de taille." },
 ];
 
 const HAIRS = ["short", "bob", "wave", "bun", "thin"];
@@ -28,7 +28,7 @@ const CLOTHS = ["#6E9474", "#C4846A", "#C6A15B", "#A9C3AA", "#8C5340", "#3F5C46"
 const VOLUMES = [140, 160, 150, 170, 190, 130, 155, 175, 145, 165, 185, 135];
 const ALLERGEN_CYCLE = [[], [], ["soja"], [], ["gluten"], [], ["lactose"], ["soja"]];
 
-const TEXTURE_LABEL = { mixe: "Mixé", hache: "Haché" };
+const TEXTURE_LABEL = { mixe: "IDDSI 4", hache: "IDDSI 5" };
 const DENUT_LABEL = { severe: "Sévère", modere: "Modérée", leger: "Légère" };
 const FIBRE_LABEL = { faible: "Faible", moyenne: "Moyenne" };
 const ALLERGEN_LABEL = { soja: "Soja", gluten: "Gluten", lactose: "Lactose" };
@@ -110,8 +110,8 @@ const FILTERS = [
   { id: "secteur:Unité Soins Lourds", label: "Soins lourds" },
   { id: "secteur:Étage 1", label: "Étage 1" },
   { id: "secteur:Étage 2", label: "Étage 2" },
-  { id: "texture:mixe", label: "Mixé" },
-  { id: "texture:hache", label: "Haché" },
+  { id: "texture:mixe", label: "IDDSI 4" },
+  { id: "texture:hache", label: "IDDSI 5" },
   { id: "denutrition:severe", label: "Dénutrition sévère" },
   { id: "denutrition:modere", label: "Dénutrition modérée" },
   { id: "denutrition:leger", label: "Dénutrition légère" },
@@ -142,10 +142,26 @@ function formatKg(value) {
 }
 
 const SOLVER = [
-  { title: "Leucine préservée", text: "Céréales et légumineuses se complètent, pour limiter la fonte musculaire." },
-  { title: "Konjac et agar-agar écartés", text: "Ces textures collent, cassent ou fondent avec la salive." },
-  { title: "Purée IDDSI 4 verrouillée", text: "La gomme xanthane (E415) tient la préparation, sans rejet d’eau." },
-  { title: "Recette du secteur", text: "45 % lentilles corail, 35 % avoine, 20 % légumes racines." },
+  {
+    title: "Groupe verrouillé : IDDSI 4",
+    text: "Le critère n’est pas « mixer un peu ». La purée doit être homogène, sans aucun morceau.",
+  },
+  {
+    title: "Ligne rouge physique",
+    text: "Une protéine végétale qui reste granuleuse après cuisson est refusée, même si elle coûte moins cher.",
+  },
+  {
+    title: "Safety blacklist",
+    text: "Konjac et agar-agar exclus. Même règle plus haut : au-delà de 1,5 cm, ou impossible à écraser au bord de la fourchette, une formule IDDSI 6 est rejetée.",
+  },
+  {
+    title: "Tenue IDDSI 4",
+    text: "La xanthane (E415) empêche la purée de couler entre les dents de la fourchette. Elle garde sa forme dans l’assiette.",
+  },
+  {
+    title: "Recette retenue",
+    text: "45 % lentilles corail, 35 % avoine, 20 % légumes racines. Leucine couverte, volume ≤ 120 g.",
+  },
 ];
 
 const SERVICE = [
@@ -217,38 +233,45 @@ export default function CantineShift() {
 function StepContext({ onNext }) {
   return (
     <div className="animate-in fade-in slide-in-from-bottom-4 duration-700">
-      <section className="grid items-end gap-8 lg:grid-cols-[1.4fr_0.8fr]">
-        <div>
-          <p className="text-sm font-semibold uppercase tracking-[0.16em] text-sage-700">Le paradoxe du repas</p>
-          <h2 className="mt-3 max-w-2xl font-serif text-4xl leading-tight text-ink sm:text-5xl">
-            Le plat est servi. Il n’est pas mangé.
+      <section className="grid items-stretch gap-5 lg:grid-cols-[0.9fr_1.1fr]">
+        <article className="rounded-3xl bg-clay-700 p-7 text-linen-50 shadow-card sm:p-9">
+          <p className="text-sm font-semibold uppercase tracking-[0.16em] text-clay-100">Le paradoxe du repas</p>
+          <p className="mt-4 font-serif text-8xl leading-none sm:text-9xl">48 %</p>
+          <h2 className="mt-4 font-serif text-3xl leading-tight sm:text-4xl">
+            La moitié du budget part à la poubelle.
           </h2>
-          <p className="mt-5 max-w-2xl text-lg leading-relaxed text-ink-soft">
-            Les diététiciens estiment encore à la main. Les cuisines, elles, doivent produire en série pour des
-            métabolismes très différents. Les compléments oraux comblent le trou, puis finissent souvent à la poubelle.
+          <p className="mt-4 max-w-md text-base leading-relaxed text-clay-100">
+            Étude hospitalière canadienne : 2,4 compléments oraux commandés par jour, 1,3 réellement pris.
+            L’EHPAD paie le complément au prix fort, puis jette près de la moitié de ce budget repas.
           </p>
-        </div>
-        <div className="rounded-3xl bg-white/80 p-5 shadow-card">
-          <p className="text-sm text-ink-soft">Ce que la boucle relie</p>
-          <p className="mt-2 font-serif text-2xl leading-snug">
-            Le besoin d’une personne, la casserole de tout un secteur.
+        </article>
+
+        <article className="rounded-3xl bg-white p-7 shadow-card sm:p-8">
+          <p className="text-sm font-semibold text-sage-700">CHU de Dijon · patients de 87 ans</p>
+          <h2 className="mt-2 font-serif text-3xl leading-tight">
+            Le plat enrichi est fini. Le complément, non.
+          </h2>
+          <p className="mt-3 text-sm leading-relaxed text-ink-soft">
+            Le complément n’est pas un repas. Une crème enrichie, donc une vraie texture d’assiette, est terminée bien plus souvent.
           </p>
-        </div>
+          <ul className="mt-5 space-y-3">
+            <IntakeBar label="CNO, entièrement bu" value="61 %" width="61%" tone="clay" />
+            <IntakeBar label="Crème enrichie, premier bol" value="94 %" width="94%" tone="sage" />
+            <IntakeBar label="Même crème, deuxième bol" value="84 %" width="84%" tone="sage" />
+          </ul>
+        </article>
       </section>
 
-      <section className="mt-8 grid gap-4 md:grid-cols-3">
-        <Stat
-          value="48 %"
-          label="des CNO prescrits gaspillés dans une étude hospitalière canadienne : 2,4 suppléments commandés par jour, 1,3 réellement pris."
-        />
-        <Stat
-          value="61 %"
-          label="des CNO consommés entièrement au CHU de Dijon, contre 94 % puis 84 % pour une crème enrichie, chez des patients de 87 ans en moyenne."
-        />
-        <Stat
-          value="Hors repas"
-          label="Les CNO ne font pas partie du repas habituel. On s’en lasse, et le gramme de protéine vraiment avalé coûte encore plus cher."
-        />
+      <section className="mt-5 rounded-3xl bg-white/80 p-6 shadow-card sm:p-7">
+        <p className="text-sm font-semibold text-sage-700">Coût par gramme de protéine avalé</p>
+        <p className="mt-1 text-xs font-semibold uppercase tracking-[0.14em] text-ink-soft">Cost per Effective Protein</p>
+        <p className="mt-3 max-w-3xl font-serif text-2xl leading-snug text-ink sm:text-3xl">
+          0,20 € sur l’étiquette. 0,38 € une fois les 48 % jetés.
+        </p>
+        <p className="mt-3 max-w-3xl text-sm leading-relaxed text-ink-soft">
+          Une bouteille à 2 € pour 10 g affiche 0,20 €/g. Il n’en reste que 52 % dans l’assiette, donc le gramme vraiment avalé coûte 0,38 €.
+          Le bon de commande compare ensuite ce prix à la préparation végétale, finie à 94 % au lieu de 61 %.
+        </p>
       </section>
 
       <div className="mt-10 flex justify-center">
@@ -300,7 +323,7 @@ function StepResidents({ onNext }) {
         <p className="text-sm font-semibold text-sage-700">1 · Résidents</p>
         <h2 className="font-serif text-4xl">D’abord une catégorie, ensuite une personne</h2>
         <p className="mt-2 text-ink-soft">
-          Les étiquettes isolent un secteur, une texture, une dénutrition ou une allergie. La fiche à droite s’ouvre sur la personne choisie.
+          Le groupe se fait sur le code IDDSI, pas sur « mixer un peu » ou « ramollir ». La fiche à droite ouvre ensuite la personne choisie.
         </p>
       </div>
 
@@ -389,7 +412,14 @@ function StepResidents({ onNext }) {
             <Detail label="Déficit protéines"><span className="font-semibold">{person.deficit} g</span></Detail>
             <Detail label="Dénutrition"><Tag tone={person.denutrition}>{DENUT_LABEL[person.denutrition]}</Tag></Detail>
             <Detail label="Texture">
-              <span className="font-semibold">{TEXTURE_LABEL[person.texture]} · IDDSI {person.texture === "mixe" ? "4" : "5"}</span>
+              <span className="text-right">
+                <span className="block font-semibold">
+                  {person.texture === "mixe" ? "IDDSI 4 · Purée lisse" : "IDDSI 5 · Haché lubrifié"}
+                </span>
+                <span className="block text-xs font-normal text-ink-soft">
+                  {person.texture === "mixe" ? "Homogène, sans aucun morceau" : "Morceaux ≤ 4 mm, dans une sauce"}
+                </span>
+              </span>
             </Detail>
             <Detail label="Volume max">
               <span className="flex items-center gap-2 font-semibold">
@@ -413,8 +443,8 @@ function StepResidents({ onNext }) {
         <Constraint label="Volume gastrique" value={`${rule.volume} g / repas`} hint={`Le bol de ${rule.id}`} />
         <Constraint
           label="Texture"
-          value={mixeCount && hacheCount ? "Mixé et haché" : mixeCount ? "IDDSI 4" : "IDDSI 5"}
-          hint={mixeCount && hacheCount ? `${mixeCount} mixés · ${hacheCount} hachés` : mixeCount ? "Purée lisse" : "Haché et lubrifié"}
+          value={mixeCount && hacheCount ? "IDDSI 4 et 5" : mixeCount ? "IDDSI 4" : "IDDSI 5"}
+          hint={mixeCount && hacheCount ? `${mixeCount} purées · ${hacheCount} hachés` : mixeCount ? "Sans aucun morceau" : "Particules ≤ 4 mm"}
         />
         <Constraint label="Fibres" value={FIBRE_LABEL[fibreFloor]} hint={`Le seuil de ${fibrePerson.id}`} />
       </div>
@@ -425,8 +455,8 @@ function StepResidents({ onNext }) {
             <p className="text-sm font-semibold text-ink-soft">Regroupement IDDSI</p>
             <p className="font-serif text-3xl text-sage-800">{deficitSum} g à combler</p>
           </div>
-          <p className="max-w-sm text-sm text-ink-soft">
-            Les niveaux 0 à 2 concernent les boissons. Le groupe affiché se répartit entre le mixé et le haché.
+          <p className="max-w-md text-sm text-ink-soft">
+            Les niveaux 0 à 2 concernent les boissons. IDDSI 4 : purée sans morceau. IDDSI 5 : particules de 4 mm au plus, dans une sauce.
           </p>
         </div>
         <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-5">
@@ -438,8 +468,9 @@ function StepResidents({ onNext }) {
                 <p className={`font-serif text-2xl ${active ? "text-linen-50" : "text-sage-700"}`}>{item.level}</p>
                 <p className="text-sm font-semibold leading-tight">{item.name}</p>
                 <p className={`mt-1 text-xs leading-snug ${active ? "text-sage-100" : "text-ink-soft"}`}>
-                  {active ? `${count} résidents` : item.detail}
+                  {item.detail}
                 </p>
+                {active && <p className="mt-1 text-xs font-semibold text-linen-50">{count} résidents</p>}
               </div>
             );
           })}
@@ -558,7 +589,7 @@ function StepOptimizing({ onComplete }) {
       <p className="text-sm font-semibold uppercase tracking-[0.16em] text-sage-700">Base Ciqual · quelques millisecondes</p>
       <h2 className="mt-3 text-center font-serif text-4xl">Le plus de protéines, dans le plus petit bol</h2>
       <p className="mt-3 text-center text-ink-soft">
-        Le moteur cherche la combinaison végétale la moins chère, sans dépasser 120 g et sans risque de fausse route.
+        Chaque code IDDSI est une ligne rouge. Si l’ingrédient cuit ne peut pas la tenir, il sort de la formule.
       </p>
       <ol className="mt-8 w-full space-y-3">
         {SOLVER.map((item, index) => {
@@ -617,8 +648,27 @@ function StepMetiers({ onNext }) {
               <div className="rounded-2xl bg-sage-50 px-4 py-3">
                 <p className="text-sm text-sage-800">Préparation végétale</p>
                 <p className="font-serif text-3xl text-sage-800">12 €</p>
-                <p className="text-sm text-sage-700">0,27 € / résident · −92 %</p>
+                <p className="text-sm text-sage-700">0,27 € / résident · achat −92 %</p>
               </div>
+            </div>
+            <div className="mt-4 rounded-2xl bg-linen-50 px-4 py-3">
+              <p className="text-sm font-semibold">Gramme avalé</p>
+              <p className="text-xs text-ink-soft">Cost per Effective Protein</p>
+              <div className="mt-2 grid grid-cols-2 gap-3">
+                <div>
+                  <p className="text-xs text-clay-700">CNO</p>
+                  <p className="font-serif text-2xl text-clay-700">0,38 €</p>
+                  <p className="text-xs leading-snug text-ink-soft">étiquette 0,20 €, puis 48 % jetés</p>
+                </div>
+                <div>
+                  <p className="text-xs text-sage-800">Préparation</p>
+                  <p className="font-serif text-2xl text-sage-800">0,018 €</p>
+                  <p className="text-xs leading-snug text-ink-soft">704 g couverts, 94 % d’assiettes finies</p>
+                </div>
+              </div>
+              <p className="mt-2 text-xs leading-relaxed text-ink-soft">
+                Dijon : 61 % des CNO bus en entier, 94 % pour une texture de plat. Ici, 12 € couvrent le déficit du groupe.
+              </p>
             </div>
             <ul className="mt-4 space-y-2 text-sm">
               <OrderLine name="Lentilles corail" qty="2,43 kg" share="45 %" />
@@ -637,8 +687,8 @@ function StepMetiers({ onNext }) {
             <p className="pb-4 text-center text-sm font-semibold text-clay-700">Pour la cuisine</p>
           </div>
           <div className="p-5">
-            <p className="text-sm text-ink-soft">Fiche cuisine</p>
-            <h3 className="font-serif text-2xl leading-tight">La purée se vérifie à la cuillère</h3>
+            <p className="text-sm text-ink-soft">Fiche cuisine · groupe IDDSI 4</p>
+            <h3 className="font-serif text-2xl leading-tight">La recette, puis le contrôle</h3>
             <p className="mt-4 text-sm font-semibold text-ink-soft">Ratio du jour</p>
             <div className="mt-2 flex h-3 overflow-hidden rounded-full">
               <div className="w-[45%] bg-clay-400" />
@@ -650,13 +700,19 @@ function StepMetiers({ onNext }) {
               <Recipe name="Avoine" share="35 %" swatch="bg-honey-500" />
               <Recipe name="Légumes racines" share="20 %" swatch="bg-sage-500" />
             </ul>
-            <div className="mt-4 rounded-2xl bg-honey-100/80 p-4">
-              <p className="text-sm font-semibold text-clay-700">Contrôle IDDSI 4, à température de service</p>
-              <ul className="mt-2 space-y-2 text-sm leading-relaxed">
-                <li>Particules inférieures ou égales à 4 mm.</li>
-                <li>La purée tient dans la cuillère inclinée, puis glisse d’un bloc.</li>
-                <li>Aucun liquide ne perle autour. La xanthane est là pour cela.</li>
-              </ul>
+            <div className="mt-4 space-y-3">
+              <div className="rounded-2xl bg-honey-100/80 p-4">
+                <p className="text-sm font-semibold text-clay-700">Contrôle qualité · IDDSI 4</p>
+                <p className="mt-2 text-sm leading-relaxed">
+                  Ne coule pas à travers les dents d’une fourchette et garde sa forme dans l’assiette.
+                </p>
+              </div>
+              <div className="rounded-2xl bg-linen-50 p-4">
+                <p className="text-sm font-semibold text-sage-800">Contrôle qualité · IDDSI 5</p>
+                <p className="mt-2 text-sm leading-relaxed">
+                  Petits morceaux mélangés à une sauce, taille maximale de 4 mm.
+                </p>
+              </div>
             </div>
           </div>
         </article>
@@ -828,12 +884,18 @@ function AuditPoint({ title, children }) {
   );
 }
 
-function Stat({ value, label }) {
+function IntakeBar({ label, value, width, tone }) {
+  const bar = tone === "clay" ? "bg-clay-400" : "bg-sage-500";
   return (
-    <article className="rounded-3xl border border-white/70 bg-white/75 p-5 shadow-card">
-      <p className="font-serif text-3xl text-clay-700">{value}</p>
-      <p className="mt-2 text-sm leading-relaxed text-ink-soft">{label}</p>
-    </article>
+    <li>
+      <div className="mb-1 flex items-baseline justify-between gap-3 text-sm">
+        <span>{label}</span>
+        <span className="font-serif text-xl text-ink">{value}</span>
+      </div>
+      <div className="h-2.5 overflow-hidden rounded-full bg-linen-100">
+        <div className={`h-full rounded-full ${bar}`} style={{ width }} />
+      </div>
+    </li>
   );
 }
 
