@@ -1,12 +1,22 @@
 import { useEffect, useRef, useState } from "react";
 import {
+  ArrowLeft,
   ArrowRight,
   Check,
+  Download,
   Leaf,
   Lock,
-  RefreshCcw,
-  Sprout,
+  Shield,
+  X,
 } from "lucide-react";
+import { CNO, COMPLIANCE } from "./data/references";
+import {
+  co2AvoidedPct,
+  cnoCo2PerBottleKg,
+  coverageRate,
+  effectiveProteinCost,
+  recipeFor,
+} from "./lib/nutrition";
 
 const FLOW = [
   { id: 1, label: "Résidents" },
@@ -104,6 +114,45 @@ function buildResidents() {
 }
 
 const RESIDENTS = buildResidents();
+const PORTION_G = 120;
+const PORTION = recipeFor(PORTION_G);
+const DAY_COUNT = RESIDENTS.length;
+const BATCH = recipeFor(DAY_COUNT * PORTION_G);
+const CNO_DAY = DAY_COUNT * CNO.pricePerBottle;
+const WASTE = 1 - COMPLIANCE.cno.value;
+const CNO_LABEL = CNO.pricePerBottle / CNO.proteinPerBottle;
+const CNO_EFFECTIVE = effectiveProteinCost(CNO.pricePerBottle, CNO.proteinPerBottle, COMPLIANCE.cno.value);
+const VEG_EFFECTIVE = effectiveProteinCost(PORTION.costEur, PORTION.proteinG, COMPLIANCE.texturedDishFirst.value);
+const SAVINGS = 1 - BATCH.costEur / CNO_DAY;
+const GROUP_DEFICIT = RESIDENTS.reduce((sum, person) => sum + person.deficit, 0);
+const GROUP_COVERAGE = coverageRate(BATCH.proteinG, GROUP_DEFICIT);
+const CNO_CO2 = DAY_COUNT * cnoCo2PerBottleKg();
+const CO2_CUT = co2AvoidedPct(CNO_CO2, BATCH.co2Kg);
+const MONTH_DAYS = 30;
+const MONTH_BOTTLES = DAY_COUNT * MONTH_DAYS;
+const MONTH_WASTED = WASTE * CNO_DAY * MONTH_DAYS;
+
+function formatEur(value, decimals = 0) {
+  return `${value.toLocaleString("fr-FR", {
+    minimumFractionDigits: decimals,
+    maximumFractionDigits: decimals,
+  })} €`;
+}
+
+function formatPct(ratio) {
+  return `${Math.round(ratio * 100)} %`;
+}
+
+function formatG(value, decimals = 1) {
+  return value.toLocaleString("fr-FR", {
+    minimumFractionDigits: decimals,
+    maximumFractionDigits: decimals,
+  });
+}
+
+function formatKgFromG(grams) {
+  return `${(grams / 1000).toLocaleString("fr-FR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} kg`;
+}
 
 const FILTERS = [
   { id: "all", label: "Tous" },
@@ -160,138 +209,134 @@ const SOLVER = [
   },
   {
     title: "Recette retenue",
-    text: "45 % lentilles corail, 35 % avoine, 20 % légumes racines. Leucine couverte, volume ≤ 120 g.",
+    text: `45 % lentilles corail, 35 % avoine, 20 % légumes racines. ${formatG(PORTION.proteinG)} g de protéines pour un bol de ${PORTION_G} g.`,
   },
 ];
 
-const SERVICE = [
-  { room: "CH_102", portion: "120 g", note: "Volume le plus faible du groupe" },
-  { room: "CH_107", portion: "120 g", note: "Cible protéique couverte" },
-  { room: "CH_114", portion: "110 g", note: "Même densité, bol plus petit" },
-  { room: "CH_121", portion: "120 g", note: "Cible protéique couverte" },
-];
-
 export default function CantineShift() {
-  const [step, setStep] = useState(0);
+  const [step, setStep] = useState(1);
+  const [solverReady, setSolverReady] = useState(false);
+  const [residentImport, setResidentImport] = useState({ ready: false, folder: "" });
+
+  function goTo(next) {
+    if (!residentImport.ready && next !== 1) return;
+    if (typeof next !== "number" || next < 2) setSolverReady(false);
+    setStep(next);
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
 
   return (
     <div className="min-h-screen text-ink">
       <header className="sticky top-0 z-40 border-b border-linen-200/80 bg-linen-50/85 backdrop-blur-md">
         <div className="mx-auto flex w-full max-w-7xl flex-col gap-4 px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex items-center gap-3">
-            <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-sage-700 text-linen-50">
-              <Sprout className="h-5 w-5" />
-            </div>
-            <div>
-              <p className="font-serif text-lg leading-none text-ink">Cerveau Nutritionnel</p>
-              <p className="mt-1 text-sm text-ink-soft">Restauration en EHPAD</p>
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
+            <img src="/pulseup-logo.png" alt="PulseUp" className="h-9 w-auto self-start sm:h-11" />
+            <div className="sm:border-l sm:border-linen-200 sm:pl-3">
+              <p className="text-sm leading-snug text-ink-soft">Restauration en EHPAD</p>
+              <p className="text-sm leading-snug text-ink-soft">La protéine végétale, vraiment mangée.</p>
             </div>
           </div>
           <ol className="flex flex-wrap items-center gap-2 text-sm">
-            <li className="flex items-center gap-2">
-              <span className={`whitespace-nowrap rounded-full px-3 py-1.5 ${step === 0 ? "bg-sage-700 text-white" : "bg-sage-100 text-sage-800"}`}>
-                Contexte
-              </span>
-              <span className="text-linen-200">/</span>
-            </li>
-            {FLOW.map((item, index) => {
-              const current = step === item.id;
-              const done = step > item.id;
-              return (
-                <li key={item.id} className="flex items-center gap-2">
-                  <span
-                    className={`flex items-center gap-2 whitespace-nowrap rounded-full px-3 py-1.5 ${
-                      current
-                        ? "bg-sage-700 text-white"
-                        : done
-                          ? "bg-sage-100 text-sage-800"
-                          : "bg-white/70 text-ink-soft"
-                    }`}
-                  >
-                    <span className="font-semibold">{item.id}</span>
-                    {item.label}
-                  </span>
-                  {index < FLOW.length - 1 && <span className="text-linen-200">/</span>}
-                </li>
-              );
-            })}
+            {FLOW.map((item, index) => (
+              <li key={item.id} className="flex items-center gap-2">
+                <StepPill
+                  current={step === item.id}
+                  disabled={!residentImport.ready && item.id !== 1}
+                  onClick={() => goTo(item.id)}
+                >
+                  <span className="font-semibold">{item.id}</span>
+                  {item.label}
+                </StepPill>
+                {index < FLOW.length - 1 && <span className="text-linen-200">/</span>}
+              </li>
+            ))}
           </ol>
         </div>
       </header>
 
       <main className="mx-auto w-full max-w-7xl px-5 py-8 sm:py-12">
-        {step === 0 && <StepContext onNext={() => setStep(1)} />}
-        {step === 1 && <StepResidents onNext={() => setStep(2)} />}
-        {step === 2 && <StepOptimizing onComplete={() => setStep(3)} />}
-        {step === 3 && <StepMetiers onNext={() => setStep(4)} />}
-        {step === 4 && <StepEgalim onReset={() => setStep(0)} />}
+        {step === 1 && (
+          <StepResidents
+            onNext={() => goTo(2)}
+            imported={residentImport.ready}
+            folderName={residentImport.folder}
+            onImport={(folder = "") => setResidentImport((current) => ({ ready: true, folder: folder || current.folder }))}
+          />
+        )}
+        {step === 2 && (
+          <StepOptimizing
+            settled={solverReady}
+            onSettled={() => setSolverReady(true)}
+            onComplete={() => goTo(3)}
+          />
+        )}
+        {step === 3 && <StepMetiers onNext={() => goTo(4)} />}
+        {step === 4 && <StepEgalim />}
       </main>
     </div>
   );
 }
 
-function StepContext({ onNext }) {
+function StepAction({ onClick, disabled = false, children }) {
   return (
-    <div className="animate-in fade-in slide-in-from-bottom-4 duration-700">
-      <section className="grid items-stretch gap-5 lg:grid-cols-[0.9fr_1.1fr]">
-        <article className="rounded-3xl bg-clay-700 p-7 text-linen-50 shadow-card sm:p-9">
-          <p className="text-sm font-semibold uppercase tracking-[0.16em] text-clay-100">Le paradoxe du repas</p>
-          <p className="mt-4 font-serif text-8xl leading-none sm:text-9xl">48 %</p>
-          <h2 className="mt-4 font-serif text-3xl leading-tight sm:text-4xl">
-            La moitié du budget part à la poubelle.
-          </h2>
-          <p className="mt-4 max-w-md text-base leading-relaxed text-clay-100">
-            Étude hospitalière canadienne : 2,4 compléments oraux commandés par jour, 1,3 réellement pris.
-            L’EHPAD paie le complément au prix fort, puis jette près de la moitié de ce budget repas.
-          </p>
-        </article>
-
-        <article className="rounded-3xl bg-white p-7 shadow-card sm:p-8">
-          <p className="text-sm font-semibold text-sage-700">CHU de Dijon · patients de 87 ans</p>
-          <h2 className="mt-2 font-serif text-3xl leading-tight">
-            Le plat enrichi est fini. Le complément, non.
-          </h2>
-          <p className="mt-3 text-sm leading-relaxed text-ink-soft">
-            Le complément n’est pas un repas. Une crème enrichie, donc une vraie texture d’assiette, est terminée bien plus souvent.
-          </p>
-          <ul className="mt-5 space-y-3">
-            <IntakeBar label="CNO, entièrement bu" value="61 %" width="61%" tone="clay" />
-            <IntakeBar label="Crème enrichie, premier bol" value="94 %" width="94%" tone="sage" />
-            <IntakeBar label="Même crème, deuxième bol" value="84 %" width="84%" tone="sage" />
-          </ul>
-        </article>
-      </section>
-
-      <section className="mt-5 rounded-3xl bg-white/80 p-6 shadow-card sm:p-7">
-        <p className="text-sm font-semibold text-sage-700">Coût par gramme de protéine avalé</p>
-        <p className="mt-1 text-xs font-semibold uppercase tracking-[0.14em] text-ink-soft">Cost per Effective Protein</p>
-        <p className="mt-3 max-w-3xl font-serif text-2xl leading-snug text-ink sm:text-3xl">
-          0,20 € sur l’étiquette. 0,38 € une fois les 48 % jetés.
-        </p>
-        <p className="mt-3 max-w-3xl text-sm leading-relaxed text-ink-soft">
-          Une bouteille à 2 € pour 10 g affiche 0,20 €/g. Il n’en reste que 52 % dans l’assiette, donc le gramme vraiment avalé coûte 0,38 €.
-          Le bon de commande compare ensuite ce prix à la préparation végétale, finie à 94 % au lieu de 61 %.
-        </p>
-      </section>
-
-      <div className="mt-10 flex justify-center">
-        <button
-          onClick={onNext}
-          className="inline-flex items-center justify-center gap-3 rounded-full bg-sage-700 px-7 py-4 text-base font-bold text-white transition hover:bg-sage-800"
-        >
-          Voir les résidents
-          <ArrowRight className="h-5 w-5" />
-        </button>
-      </div>
-    </div>
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      className={`inline-flex shrink-0 items-center gap-2 rounded-full px-5 py-2.5 text-sm font-bold transition ${
+        disabled
+          ? "cursor-not-allowed bg-linen-200 text-ink-soft/50"
+          : "bg-sage-700 text-white hover:bg-sage-800"
+      }`}
+    >
+      {children}
+    </button>
   );
 }
 
-function StepResidents({ onNext }) {
+function StepPill({ current, disabled = false, onClick, children }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      aria-current={current ? "page" : undefined}
+      className={`flex items-center gap-2 whitespace-nowrap rounded-full px-3 py-1.5 ${
+        disabled
+          ? "cursor-not-allowed bg-linen-200 text-ink-soft/45"
+          : current
+            ? "bg-sage-700 text-white"
+            : "bg-sage-100 text-sage-800 hover:bg-sage-300"
+      }`}
+    >
+      {children}
+    </button>
+  );
+}
+
+function StepResidents({ onNext, imported, folderName, onImport }) {
   const [filter, setFilter] = useState("all");
   const [selectedId, setSelectedId] = useState("CH_102");
   const listRef = useRef(null);
   const selectedRef = useRef(null);
+  const folderRef = useRef(null);
+
+  function openFolder() {
+    const input = folderRef.current;
+    if (!input) return;
+    input.setAttribute("webkitdirectory", "");
+    input.setAttribute("directory", "");
+    input.click();
+  }
+
+  function onFolder(event) {
+    const files = event.target.files;
+    if (files?.length) {
+      const relative = files[0].webkitRelativePath || files[0].name;
+      onImport(relative.split("/")[0]);
+    }
+    event.target.value = "";
+  }
   const visible = RESIDENTS.filter((item) => matchesResident(item, filter));
   const rule = ruleOf(visible);
   const person = visible.find((item) => item.id === selectedId) ?? rule;
@@ -319,14 +364,60 @@ function StepResidents({ onNext }) {
 
   return (
     <div className="animate-in fade-in slide-in-from-bottom-4 duration-700">
-      <div className="max-w-2xl">
-        <p className="text-sm font-semibold text-sage-700">1 · Résidents</p>
-        <h2 className="font-serif text-4xl">D’abord une catégorie, ensuite une personne</h2>
-        <p className="mt-2 text-ink-soft">
-          Le groupe se fait sur le code IDDSI, pas sur « mixer un peu » ou « ramollir ». La fiche à droite ouvre ensuite la personne choisie.
-        </p>
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+        <div className="max-w-2xl">
+          <p className="text-sm font-semibold text-sage-700">1 · Résidents</p>
+          <h2 className="font-serif text-4xl">
+            {imported ? "D’abord une catégorie, ensuite une personne" : "Importez d’abord les résidents"}
+          </h2>
+          <p className="mt-2 text-ink-soft">
+            {imported
+              ? "Le groupe se fait sur le code IDDSI, pas sur « mixer un peu » ou « ramollir ». La fiche à droite ouvre ensuite la personne choisie."
+              : "Le secteur est encore vide. Importez le dossier : chambres, textures et déficits arrivent ensemble, et la liste s’ouvre ensuite."}
+          </p>
+          {imported && folderName && (
+            <p className="mt-2 text-sm font-semibold text-sage-800">Dossier chargé : {folderName}</p>
+          )}
+        </div>
+        <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
+          {imported && (
+            <button
+              type="button"
+              onClick={openFolder}
+              className="inline-flex items-center gap-2 rounded-full border border-linen-200 bg-white px-5 py-2.5 text-sm font-bold text-ink hover:bg-linen-50"
+            >
+              <Download className="h-4 w-4" />
+              Réimporter un dossier
+            </button>
+          )}
+          <StepAction onClick={onNext} disabled={!imported}>
+            Composer le repas de l’unité
+            <ArrowRight className="h-4 w-4" />
+          </StepAction>
+        </div>
       </div>
+      <input ref={folderRef} type="file" multiple className="hidden" onChange={onFolder} />
 
+      {!imported && (
+        <div className="mt-8 flex min-h-[420px] flex-col items-center justify-center rounded-3xl border border-dashed border-linen-200 bg-white/70 px-6 py-16 text-center">
+          <p className="text-sm font-semibold text-sage-700">Secteur vide</p>
+          <h3 className="mt-2 font-serif text-3xl">Aucun résident chargé</h3>
+          <p className="mt-3 max-w-md text-sm leading-relaxed text-ink-soft">
+            Les chambres, les textures et les déficits arrivent ensemble, depuis le dossier du secteur.
+          </p>
+          <button
+            type="button"
+            onClick={() => onImport()}
+            className="mt-6 inline-flex items-center gap-2 rounded-full bg-sage-700 px-5 py-2.5 text-sm font-bold text-white hover:bg-sage-800"
+          >
+            <Download className="h-4 w-4" />
+            Importer les {RESIDENTS.length} résidents
+          </button>
+        </div>
+      )}
+
+      {imported && (
+      <div className="animate-in fade-in duration-500">
       <div className="mt-6 flex flex-wrap gap-2">
         {FILTERS.map((item) => {
           const count = RESIDENTS.filter((resident) => matchesResident(resident, item.id)).length;
@@ -454,6 +545,9 @@ function StepResidents({ onNext }) {
           <div>
             <p className="text-sm font-semibold text-ink-soft">Regroupement IDDSI</p>
             <p className="font-serif text-3xl text-sage-800">{deficitSum} g à combler</p>
+            <p className="mt-1 text-sm text-ink-soft">
+              Recette à {rule.volume} g : {formatG(recipeFor(rule.volume).proteinG)} g de protéines par portion, {formatPct(coverageRate(recipeFor(rule.volume).proteinG * visible.length, deficitSum))} du déficit de ce groupe.
+            </p>
           </div>
           <p className="max-w-md text-sm text-ink-soft">
             Les niveaux 0 à 2 concernent les boissons. IDDSI 4 : purée sans morceau. IDDSI 5 : particules de 4 mm au plus, dans une sauce.
@@ -476,16 +570,8 @@ function StepResidents({ onNext }) {
           })}
         </div>
       </section>
-
-      <div className="mt-10 flex justify-center">
-        <button
-          onClick={onNext}
-          className="inline-flex items-center justify-center gap-3 rounded-full bg-sage-700 px-7 py-4 text-base font-bold text-white transition hover:bg-sage-800"
-        >
-          Composer le repas de l’unité
-          <ArrowRight className="h-5 w-5" />
-        </button>
       </div>
+      )}
     </div>
   );
 }
@@ -565,23 +651,26 @@ function PortionBowl({ grams }) {
   );
 }
 
-function StepOptimizing({ onComplete }) {
-  const [active, setActive] = useState(0);
+function StepOptimizing({ onComplete, onSettled, settled }) {
+  const [active, setActive] = useState(settled ? SOLVER.length : 0);
 
   useEffect(() => {
+    if (settled) return undefined;
     const delay = active >= SOLVER.length ? 700 : active === SOLVER.length - 1 ? 1400 : 900;
     const timeout = setTimeout(() => {
-      if (active >= SOLVER.length) onComplete();
-      else setActive((value) => value + 1);
+      if (active >= SOLVER.length) {
+        onSettled();
+        onComplete();
+      } else setActive((value) => value + 1);
     }, delay);
     return () => clearTimeout(timeout);
-  }, [active, onComplete]);
+  }, [active, onComplete, onSettled, settled]);
 
   return (
     <div className="animate-in fade-in duration-500 mx-auto flex min-h-[68vh] max-w-xl flex-col items-center justify-center py-8">
       <div className="relative mb-8 flex h-28 w-28 items-center justify-center">
         <div className="absolute inset-0 rounded-full border border-sage-300" />
-        <div className="absolute inset-2 rounded-full border-2 border-sage-500 border-b-transparent animate-spin-slow" />
+        <div className={`absolute inset-2 rounded-full border-2 border-sage-500 ${settled ? "" : "border-b-transparent animate-spin-slow"}`} />
         <div className="flex h-16 w-16 items-center justify-center rounded-full bg-sage-50 text-sage-700">
           <Leaf className="h-7 w-7" />
         </div>
@@ -620,35 +709,73 @@ function StepOptimizing({ onComplete }) {
 }
 
 function StepMetiers({ onNext }) {
+  const [sheet, setSheet] = useState(null);
+  const middleRef = useRef(null);
+  const [cardHeight, setCardHeight] = useState(null);
+
+  useEffect(() => {
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }, [sheet]);
+
+  useEffect(() => {
+    const node = middleRef.current;
+    if (!node || sheet) return undefined;
+    const measure = () => {
+      const wide = window.matchMedia("(min-width: 1024px)").matches;
+      setCardHeight(wide ? node.offsetHeight : null);
+    };
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(node);
+    window.addEventListener("resize", measure);
+    return () => {
+      observer.disconnect();
+      window.removeEventListener("resize", measure);
+    };
+  }, [sheet]);
+
+  const sideStyle = cardHeight ? { height: cardHeight } : undefined;
+
+  if (sheet) {
+    return <MetierSheet kind={sheet} onBack={() => setSheet(null)} onNext={onNext} />;
+  }
+
   return (
     <div className="animate-in fade-in duration-500">
-      <div className="max-w-2xl">
-        <p className="text-sm font-semibold text-sage-700">Étape 3 · Trois métiers</p>
-        <h2 className="font-serif text-4xl">Le même repas, trois lecteurs</h2>
-        <p className="mt-2 text-ink-soft">
-          L’acheteur voit le coût, la cuisine voit la texture, le soin voit la chambre. Chacun reçoit seulement sa feuille.
-        </p>
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+        <div className="max-w-2xl">
+          <p className="text-sm font-semibold text-sage-700">Étape 3 · Trois métiers</p>
+          <h2 className="font-serif text-4xl">Le même repas, trois lecteurs</h2>
+          <p className="mt-2 text-ink-soft">
+            Chaque carte ouvre sa feuille : le coût pour l’achat, la fiche pour la cuisine, l’étiquette pour le soin.
+          </p>
+        </div>
+        <StepAction onClick={onNext}>
+          Ouvrir le bilan EGAlim
+          <ArrowRight className="h-4 w-4" />
+        </StepAction>
       </div>
 
       <div className="mt-8 grid items-start gap-5 lg:grid-cols-3">
-        <article className="min-w-0 overflow-hidden rounded-3xl bg-white shadow-card">
-          <div className="bg-clay-50 px-4 pt-4">
+        <button type="button" onClick={() => setSheet("acheteur")} style={sideStyle} className="flex min-h-0 min-w-0 flex-col overflow-hidden rounded-3xl bg-white text-left shadow-card transition hover:-translate-y-0.5">
+          <div className="shrink-0 bg-clay-50 px-4 pt-4">
             <PersonBuyer />
             <p className="pb-4 text-center text-sm font-semibold text-clay-700">Pour l’acheteur</p>
           </div>
-          <div className="p-5">
+          <div className="flex min-h-0 flex-1 flex-col p-5">
+            <div className="min-h-0 flex-1 overflow-y-auto">
             <p className="text-sm text-ink-soft">Bon de commande</p>
-            <h3 className="font-serif text-2xl leading-tight">150 € deviennent 12 €</h3>
+            <h3 className="font-serif text-2xl leading-tight">{formatEur(CNO_DAY)} deviennent {formatEur(BATCH.costEur)}</h3>
             <div className="mt-4 space-y-2">
               <div className="rounded-2xl bg-clay-50 px-4 py-3">
                 <p className="text-sm text-clay-700">CNO du jour</p>
-                <p className="font-serif text-3xl text-clay-700 line-through decoration-clay-400">150 €</p>
-                <p className="text-sm text-ink-soft">3,33 € / résident</p>
+                <p className="font-serif text-3xl text-clay-700 line-through decoration-clay-400">{formatEur(CNO_DAY)}</p>
+                <p className="text-sm text-ink-soft">{formatEur(CNO.pricePerBottle, 2)} / résident</p>
               </div>
               <div className="rounded-2xl bg-sage-50 px-4 py-3">
                 <p className="text-sm text-sage-800">Préparation végétale</p>
-                <p className="font-serif text-3xl text-sage-800">12 €</p>
-                <p className="text-sm text-sage-700">0,27 € / résident · achat −92 %</p>
+                <p className="font-serif text-3xl text-sage-800">{formatEur(BATCH.costEur)}</p>
+                <p className="text-sm text-sage-700">{formatEur(BATCH.costEur / DAY_COUNT, 2)} / résident · achat −{formatPct(SAVINGS)}</p>
               </div>
             </div>
             <div className="mt-4 rounded-2xl bg-linen-50 px-4 py-3">
@@ -657,49 +784,48 @@ function StepMetiers({ onNext }) {
               <div className="mt-2 grid grid-cols-2 gap-3">
                 <div>
                   <p className="text-xs text-clay-700">CNO</p>
-                  <p className="font-serif text-2xl text-clay-700">0,38 €</p>
-                  <p className="text-xs leading-snug text-ink-soft">étiquette 0,20 €, puis 48 % jetés</p>
+                  <p className="font-serif text-2xl text-clay-700">{formatEur(CNO_EFFECTIVE, 2)}</p>
+                  <p className="text-xs leading-snug text-ink-soft">étiquette {formatEur(CNO_LABEL, 2)}, puis {formatPct(WASTE)} non consommés</p>
                 </div>
                 <div>
                   <p className="text-xs text-sage-800">Préparation</p>
-                  <p className="font-serif text-2xl text-sage-800">0,018 €</p>
-                  <p className="text-xs leading-snug text-ink-soft">704 g couverts, 94 % d’assiettes finies</p>
+                  <p className="font-serif text-2xl text-sage-800">{formatEur(VEG_EFFECTIVE, 3)}</p>
+                  <p className="text-xs leading-snug text-ink-soft">{Math.round(BATCH.proteinG)} g couverts, {formatPct(COMPLIANCE.texturedDishFirst.value)} d’assiettes finies</p>
                 </div>
               </div>
               <p className="mt-2 text-xs leading-relaxed text-ink-soft">
-                Dijon : 61 % des CNO bus en entier, 94 % pour une texture de plat. Ici, 12 € couvrent le déficit du groupe.
+                Kayser-Jones (1998) : {formatPct(COMPLIANCE.cno.value)} des CNO consommés. Ici, {formatEur(BATCH.costEur)} couvrent {formatPct(GROUP_COVERAGE)} du déficit du groupe.
               </p>
             </div>
             <ul className="mt-4 space-y-2 text-sm">
-              <OrderLine name="Lentilles corail" qty="2,43 kg" share="45 %" />
-              <OrderLine name="Avoine" qty="1,89 kg" share="35 %" />
-              <OrderLine name="Légumes racines" qty="1,08 kg" share="20 %" />
+              <OrderLine name="Lentilles corail" qty={formatKgFromG(BATCH.grams.lentillesCorail)} share="45 %" />
+              <OrderLine name="Avoine" qty={formatKgFromG(BATCH.grams.avoine)} share="35 %" />
+              <OrderLine name="Légumes racines" qty={formatKgFromG(BATCH.grams.legumesRacines)} share="20 %" />
             </ul>
             <p className="mt-3 text-xs leading-relaxed text-ink-soft">
               45 portions × 120 g = 5,4 kg. Scénario de démonstration.
             </p>
+            </div>
+            <SheetLink>Ouvrir le bon et la conformité</SheetLink>
           </div>
-        </article>
+        </button>
 
-        <article className="min-w-0 overflow-hidden rounded-3xl bg-white shadow-card">
+        <button type="button" ref={middleRef} onClick={() => setSheet("cuisine")} className="min-w-0 overflow-hidden rounded-3xl bg-white text-left shadow-card transition hover:-translate-y-0.5">
           <div className="bg-honey-100 px-4 pt-4">
             <PersonCook />
             <p className="pb-4 text-center text-sm font-semibold text-clay-700">Pour la cuisine</p>
           </div>
           <div className="p-5">
-            <p className="text-sm text-ink-soft">Fiche cuisine · groupe IDDSI 4</p>
-            <h3 className="font-serif text-2xl leading-tight">La recette, puis le contrôle</h3>
-            <p className="mt-4 text-sm font-semibold text-ink-soft">Ratio du jour</p>
-            <div className="mt-2 flex h-3 overflow-hidden rounded-full">
-              <div className="w-[45%] bg-clay-400" />
-              <div className="w-[35%] bg-honey-500" />
-              <div className="w-[20%] bg-sage-500" />
+            <p className="text-sm text-ink-soft">Fiche cuisine · une seule marmite</p>
+            <h3 className="font-serif text-2xl leading-tight">15 kg, puis le grammage de chacun</h3>
+            <div className="mt-4 rounded-2xl bg-honey-100/80 p-4">
+              <p className="text-sm font-semibold text-clay-700">Base IDDSI 4</p>
+              <p className="mt-1 font-serif text-xl leading-tight">Lentilles, pois, avoine, pommes de terre, carottes</p>
             </div>
-            <ul className="mt-3 space-y-1.5 text-sm">
-              <Recipe name="Lentilles corail" share="45 %" swatch="bg-clay-400" />
-              <Recipe name="Avoine" share="35 %" swatch="bg-honey-500" />
-              <Recipe name="Légumes racines" share="20 %" swatch="bg-sage-500" />
-            </ul>
+            <div className="mt-3 rounded-2xl bg-clay-50 p-4">
+              <p className="text-sm font-semibold text-clay-700">Soja retiré · CH_102</p>
+              <p className="mt-1 text-sm">La base unique passe à la protéine de pois.</p>
+            </div>
             <div className="mt-4 space-y-3">
               <div className="rounded-2xl bg-honey-100/80 p-4">
                 <p className="text-sm font-semibold text-clay-700">Contrôle qualité · IDDSI 4</p>
@@ -714,52 +840,566 @@ function StepMetiers({ onNext }) {
                 </p>
               </div>
             </div>
+            <SheetLink>Ouvrir la fiche technique</SheetLink>
           </div>
-        </article>
+        </button>
 
-        <article className="min-w-0 overflow-hidden rounded-3xl bg-white shadow-card">
-          <div className="bg-sage-50 px-4 pt-4">
+        <button type="button" onClick={() => setSheet("soin")} style={sideStyle} className="flex min-h-0 min-w-0 flex-col overflow-hidden rounded-3xl bg-white text-left shadow-card transition hover:-translate-y-0.5">
+          <div className="shrink-0 bg-sage-50 px-4 pt-4">
             <PersonCare />
             <p className="pb-4 text-center text-sm font-semibold text-sage-800">Pour le soin</p>
           </div>
-          <div className="p-5">
+          <div className="flex min-h-0 flex-1 flex-col p-5">
+            <div className="min-h-0 flex-1">
             <p className="text-sm text-ink-soft">Liste de service</p>
             <h3 className="font-serif text-2xl leading-tight">Chaque chambre, son bol</h3>
             <ul className="mt-4 divide-y divide-linen-100">
-              {SERVICE.map((row) => (
-                <li key={row.room} className="flex items-center justify-between gap-3 py-3 text-sm">
-                  <span>
-                    <span className="block font-semibold">{row.room}</span>
-                    <span className="text-ink-soft">{row.note}</span>
+              {RESIDENTS.slice(0, 4).map((item) => (
+                <li key={item.id} className="flex items-center gap-3 py-2.5 text-sm">
+                  <span className="inline-flex h-9 w-9 shrink-0 overflow-hidden rounded-full bg-linen-100">
+                    <ElderFace hair={item.hair} glasses={item.glasses} cloth={item.cloth} compact />
                   </span>
-                  <span className="shrink-0 rounded-full bg-linen-100 px-3 py-1 font-semibold">{row.portion}</span>
+                  <span className="min-w-0">
+                    <span className="flex flex-wrap items-center gap-1.5">
+                      <span className="font-semibold">{item.id}</span>
+                      <Tag tone={item.denutrition}>{DENUT_LABEL[item.denutrition]}</Tag>
+                      <Tag>{TEXTURE_LABEL[item.texture]}</Tag>
+                    </span>
+                  </span>
+                  <span className="ml-auto shrink-0 font-semibold">{item.volume} g</span>
                 </li>
               ))}
             </ul>
             <p className="mt-3 text-sm leading-relaxed text-ink-soft">
-              41 autres chambres suivent la même fiche. Le plus petit appétit atteint sa cible dans 120 g.
+              45 étiquettes, une par personne. Chacune reprend la chambre, la texture et le volume.
             </p>
+            </div>
+            <SheetLink>Ouvrir les étiquettes</SheetLink>
           </div>
-        </article>
-      </div>
-
-      <div className="mt-10 flex justify-center">
-        <button
-          onClick={onNext}
-          className="inline-flex items-center gap-3 rounded-full bg-sage-700 px-7 py-4 text-base font-bold text-white hover:bg-sage-800"
-        >
-          Ouvrir le bilan EGAlim
-          <ArrowRight className="h-5 w-5" />
         </button>
       </div>
     </div>
   );
 }
 
-function StepEgalim({ onReset }) {
+function SheetLink({ children }) {
+  return (
+    <span className="mt-4 inline-flex shrink-0 items-center gap-2 text-sm font-bold text-sage-800">
+      {children}
+      <ArrowRight className="h-4 w-4" />
+    </span>
+  );
+}
+
+function MetierSheet({ kind, onBack, onNext }) {
   return (
     <div className="animate-in fade-in duration-500">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <button
+          type="button"
+          onClick={onBack}
+          className="inline-flex items-center gap-2 text-sm font-semibold text-ink-soft hover:text-ink"
+        >
+          <ArrowLeft className="h-4 w-4" />
+          Les trois feuilles
+        </button>
+        <StepAction onClick={onNext}>
+          Ouvrir le bilan EGAlim
+          <ArrowRight className="h-4 w-4" />
+        </StepAction>
+      </div>
+      {kind === "cuisine" && <KitchenSheet />}
+      {kind === "acheteur" && <BuyerSheet />}
+      {kind === "soin" && <CareSheet />}
+    </div>
+  );
+}
+
+const BASE_FOODS = [
+  { name: "Lentilles corail", kg: 4, color: "#C4846A", src: "/foods/lentilles.png?v=4", aspect: 2.05 },
+  { name: "Pois cassés", kg: 3, color: "#6E9474", src: "/foods/pois.png?v=3", aspect: 1.38 },
+  { name: "Avoine", kg: 3, color: "#C6A15B", src: "/foods/avoine.png?v=3", aspect: 1 },
+  { name: "Pommes de terre", kg: 3, color: "#E4C98A", src: "/foods/pommes.png?v=3", aspect: 1.34 },
+  { name: "Carottes", kg: 2, color: "#C46B3A", src: "/foods/carottes.png?v=3", aspect: 1.45 },
+];
+
+function gramsOf(volume) {
+  const rows = BASE_FOODS.map((food) => ({ ...food, grams: Math.floor((volume * food.kg) / 15) }));
+  let leftover = volume - rows.reduce((sum, row) => sum + row.grams, 0);
+  rows.forEach((row) => {
+    if (leftover <= 0) return;
+    row.grams += 1;
+    leftover -= 1;
+  });
+  return rows;
+}
+
+function KitchenSheet() {
+  const soyRooms = RESIDENTS.filter((item) => item.allergenes.includes("soja"));
+  const served = RESIDENTS.reduce((sum, item) => sum + item.volume, 0);
+
+  return (
+    <div>
+      <p className="mt-6 text-sm font-semibold text-clay-700">Pour la cuisine</p>
+      <h2 className="mt-1 font-serif text-4xl">Une marmite, pas 45 recettes</h2>
+      <p className="mt-3 max-w-2xl text-lg leading-relaxed text-ink-soft">
+        Le cuisinier fait la base une fois. Le grammage de chaque personne est déjà écrit.
+      </p>
+
+      <div className="mt-6 grid items-start gap-4 lg:grid-cols-[1.15fr_0.85fr]">
+        <article className="overflow-hidden rounded-3xl bg-sage-800 text-linen-50 shadow-card">
+          <div className="flex flex-wrap items-center justify-between gap-3 px-5 pt-5 sm:px-6">
+            <p className="text-sm font-semibold uppercase tracking-[0.14em] text-sage-100">La recette unique</p>
+            <span className="rounded-full bg-white/15 px-3 py-1 text-sm font-semibold">IDDSI 4</span>
+          </div>
+          <div className="grid grid-cols-[auto_1fr] items-center gap-4 px-5 pb-4 pt-3 sm:px-6">
+            <PotMark />
+            <div>
+              <h3 className="font-serif text-3xl leading-tight">15 kg de base</h3>
+              <p className="mt-2 text-sm leading-relaxed text-sage-100">
+                Une seule cuisson. Cinq ingrédients, plus 150 g de xanthane pour la tenue.
+              </p>
+            </div>
+          </div>
+          <ul className="grid gap-x-6 border-t border-white/15 px-5 py-1 text-sm sm:grid-cols-2 sm:px-6">
+            {BASE_FOODS.map((food) => (
+              <li key={food.name} className="flex items-baseline justify-between gap-3 border-b border-white/10 py-2">
+                <span>{food.name}</span>
+                <span>{food.kg} kg</span>
+              </li>
+            ))}
+            <li className="flex items-baseline justify-between gap-3 border-b border-white/10 py-2 sm:col-span-2">
+              <span>Gomme xanthane (E415)</span>
+              <span>150 g · dose du scénario</span>
+            </li>
+          </ul>
+          <p className="px-5 pb-5 pt-3 text-sm text-sage-100 sm:px-6">Le cuisinier ne reçoit pas une fiche par chambre.</p>
+        </article>
+
+        <aside className="grid gap-3">
+          <article className="rounded-3xl border border-clay-400 bg-clay-50 p-4 shadow-card">
+            <div className="flex items-start gap-3">
+              <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-clay-700 text-white">
+                <Shield className="h-4 w-4" />
+              </span>
+              <div>
+                <p className="text-sm font-semibold text-clay-700">Alerte allergène</p>
+                <h3 className="mt-1 font-serif text-xl leading-tight">Le soja est déjà sorti de la marmite.</h3>
+                <p className="mt-2 text-sm leading-relaxed">
+                  CH_102 est allergique au soja, avec {soyRooms.length - 1} autres chambres. La base unique passe à la protéine de pois. Pas de seconde recette.
+                </p>
+              </div>
+            </div>
+          </article>
+          <article className="rounded-3xl bg-honey-100/80 p-4">
+            <p className="text-sm font-semibold text-clay-700">Avant de sortir · IDDSI 4</p>
+            <p className="mt-2 text-sm leading-relaxed">
+              Test à la fourchette : ne coule pas à travers les dents, ne rend pas de liquide, et garde sa forme dans l’assiette.
+            </p>
+          </article>
+          <article className="rounded-3xl bg-white p-4 shadow-card">
+            <p className="text-sm font-semibold text-sage-800">Avant de sortir · IDDSI 5</p>
+            <p className="mt-2 text-sm leading-relaxed">
+              Petits morceaux mélangés à une sauce, taille maximale de 4 mm.
+            </p>
+          </article>
+        </aside>
+      </div>
+
+      <DressageBoard served={served} />
+    </div>
+  );
+}
+
+function DressageBoard({ served }) {
+  const [selectedId, setSelectedId] = useState("CH_102");
+  const person = RESIDENTS.find((item) => item.id === selectedId) ?? RESIDENTS[0];
+  const parts = gramsOf(person.volume);
+  const soy = person.allergenes.includes("soja");
+  const smooth = person.texture === "mixe";
+
+  return (
+    <section className="mt-4">
+      <div className="flex items-end justify-between gap-4">
+        <div>
+          <p className="text-sm font-semibold text-sage-800">Plan de dressage</p>
+          <h3 className="mt-1 font-serif text-3xl">Chaque assiette, son poids</h3>
+        </div>
+        <p className="text-right text-sm text-ink-soft">{RESIDENTS.length} personnes</p>
+      </div>
+      <div className="mt-4 grid items-stretch gap-4 lg:grid-cols-[1.05fr_0.95fr]">
+        <section className="flex h-80 flex-col overflow-hidden rounded-3xl bg-white shadow-card lg:h-0 lg:min-h-full">
+          <div className="min-h-0 flex-1 overflow-y-auto">
+            {RESIDENTS.map((item) => {
+              const selected = item.id === person.id;
+              return (
+                <button
+                  key={item.id}
+                  type="button"
+                  onClick={() => setSelectedId(item.id)}
+                  className={`grid w-full grid-cols-[auto_1fr_auto] items-center gap-3 border-t border-linen-100 px-4 py-2.5 text-left ${
+                    selected ? "bg-sage-50" : "hover:bg-linen-50"
+                  }`}
+                >
+                  <span className="inline-flex h-11 w-11 overflow-hidden rounded-full bg-linen-100">
+                    <ElderFace hair={item.hair} glasses={item.glasses} cloth={item.cloth} compact />
+                  </span>
+                  <span className="min-w-0">
+                    <span className="flex flex-wrap items-center gap-1.5">
+                      <span className="font-semibold">{item.id}</span>
+                      <Tag>{TEXTURE_LABEL[item.texture]}</Tag>
+                      {item.allergenes.includes("soja") && <span className="text-xs font-semibold text-clay-700">pois, pas soja</span>}
+                    </span>
+                  </span>
+                  <span className="font-semibold">{item.volume} g</span>
+                </button>
+              );
+            })}
+          </div>
+        </section>
+
+        <article className="rounded-3xl bg-white p-5 shadow-card">
+          <p className="text-sm text-ink-soft">Assiette de {person.id}</p>
+          <div className="mt-2 flex flex-wrap items-center gap-1.5">
+            <Tag>{TEXTURE_LABEL[person.texture]}</Tag>
+            {soy && <span className="text-xs font-semibold text-clay-700">pois, pas soja</span>}
+          </div>
+          <MealPlate />
+          <p className="text-center font-serif text-3xl leading-none">{person.volume} g</p>
+          <p className="mt-1 text-center text-sm text-ink-soft">
+            {smooth ? "Purée lisse, sans aucun morceau" : "Morceaux ≤ 4 mm, dans une sauce"}
+          </p>
+          <ul className="mt-3 grid grid-cols-6 gap-2 text-sm">
+            {parts.map((part, index) => (
+              <li
+                key={part.name}
+                className={`flex items-center justify-between gap-1.5 rounded-2xl bg-linen-50 px-2.5 py-2 ${
+                  index < 3 ? "col-span-2" : "col-span-3"
+                }`}
+              >
+                <span className="flex min-w-0 items-center gap-1.5">
+                  <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: part.color }} />
+                  <span className="leading-tight">{part.name}</span>
+                </span>
+                <span className="shrink-0 font-semibold">{part.grams} g</span>
+              </li>
+            ))}
+          </ul>
+          <p className="mt-3 text-xs leading-relaxed text-ink-soft">
+            {soy
+              ? "Même base que la marmite, sans soja. La protéine de cette assiette est le pois."
+              : "Même base que la marmite : lentilles, pois cassés, avoine, pommes de terre et carottes."}
+          </p>
+        </article>
+      </div>
+      <p className="mt-3 text-sm text-ink-soft">
+        Somme des {RESIDENTS.length} assiettes de ce secteur : {(served / 1000).toFixed(1).replace(".", ",")} kg.
+      </p>
+    </section>
+  );
+}
+
+function MealPlate() {
+  const lobes = 16;
+  const rim = scallopedRim(100, 100, 78, 92, lobes);
+  const total = BASE_FOODS.reduce((sum, food) => sum + food.kg, 0);
+  let cursor = -Math.PI / 2;
+  const slices = BASE_FOODS.map((food, index) => {
+    const sweep = (food.kg / total) * Math.PI * 2;
+    const start = cursor;
+    cursor += sweep;
+    const box = sectorBox(100, 100, 14, 58, start, cursor, food.aspect ?? 1);
+    return { ...food, index, start, end: cursor, d: donutSlice(100, 100, 14, 58, start, cursor), box };
+  });
+  return (
+    <svg viewBox="0 0 200 200" className="mx-auto mt-2 w-full max-w-[280px]" aria-hidden="true">
+      <defs>
+        {slices.map((food) => (
+          <clipPath id={`plate-food-${food.index}`} key={food.name}>
+            <path d={food.d} />
+          </clipPath>
+        ))}
+      </defs>
+      <ellipse cx="100" cy="168" rx="62" ry="7" fill="#E7D9C8" opacity="0.7" />
+      <path d={rim} fill="#FFFcf8" stroke="#3F6B46" strokeWidth="1.7" />
+      <circle cx="100" cy="100" r="62" fill="#FFFcf8" stroke="#E7E2D4" strokeWidth="1" />
+      {Array.from({ length: lobes }, (_, index) => (
+        <path key={index} d={rimCurl(100, 100, 84, index, lobes)} fill="none" stroke="#3F6B46" strokeWidth="1.15" strokeLinecap="round" />
+      ))}
+      {slices.map((food) => (
+        <g key={food.name} clipPath={`url(#plate-food-${food.index})`}>
+          <path d={food.d} fill={food.color} opacity="0.38" />
+          <image href={food.src} x={food.box.x} y={food.box.y} width={food.box.width} height={food.box.height} preserveAspectRatio="xMidYMid meet" />
+        </g>
+      ))}
+      {slices.map((food) => (
+        <path key={`${food.name}-edge`} d={food.d} fill="none" stroke="#FFFcf8" strokeWidth="2.4" />
+      ))}
+    </svg>
+  );
+}
+
+function sectorBox(cx, cy, inner, outer, start, end, aspect) {
+  const mid = (start + end) / 2;
+  const sweep = end - start;
+  let height = (outer - inner) * 0.9;
+  let width = height * aspect;
+  let radius = (inner + outer) / 2;
+  for (let step = 0; step < 16; step += 1) {
+    const angular = 2 * radius * Math.tan(sweep / 2) * 0.9;
+    width = Math.min(width, angular);
+    height = width / aspect;
+    height = Math.min(height, (outer - inner) * 0.88);
+    width = height * aspect;
+    const innerClear = inner + height / 2 + 1.2;
+    const outerClear = outer - height / 2 - 1.2;
+    radius = innerClear <= outerClear ? (innerClear + outerClear) / 2 : (inner + outer) / 2;
+    const x = cx + radius * Math.cos(mid) - width / 2;
+    const y = cy + radius * Math.sin(mid) - height / 2;
+    const corners = [
+      [x, y],
+      [x + width, y],
+      [x, y + height],
+      [x + width, y + height],
+    ];
+    if (corners.every((point) => pointInSlice(point[0], point[1], cx, cy, inner, outer, start, end))) break;
+    height *= 0.88;
+    width = height * aspect;
+  }
+  return {
+    x: cx + radius * Math.cos(mid) - width / 2,
+    y: cy + radius * Math.sin(mid) - height / 2,
+    width,
+    height,
+  };
+}
+
+function pointInSlice(x, y, cx, cy, inner, outer, start, end) {
+  const dx = x - cx;
+  const dy = y - cy;
+  const distance = Math.hypot(dx, dy);
+  if (distance < inner + 0.6 || distance > outer - 0.6) return false;
+  let offset = Math.atan2(dy, dx) - start;
+  while (offset < 0) offset += Math.PI * 2;
+  while (offset >= Math.PI * 2) offset -= Math.PI * 2;
+  return offset <= end - start;
+}
+
+function donutSlice(cx, cy, inner, outer, start, end) {
+  const large = end - start > Math.PI ? 1 : 0;
+  const point = (radius, angle) => [cx + radius * Math.cos(angle), cy + radius * Math.sin(angle)];
+  const [x0, y0] = point(outer, start);
+  const [x1, y1] = point(outer, end);
+  const [x2, y2] = point(inner, end);
+  const [x3, y3] = point(inner, start);
+  return `M ${x0.toFixed(2)} ${y0.toFixed(2)} A ${outer} ${outer} 0 ${large} 1 ${x1.toFixed(2)} ${y1.toFixed(2)} L ${x2.toFixed(2)} ${y2.toFixed(2)} A ${inner} ${inner} 0 ${large} 0 ${x3.toFixed(2)} ${y3.toFixed(2)} Z`;
+}
+
+function scallopedRim(cx, cy, inner, outer, count) {
+  let d = "";
+  for (let i = 0; i < count; i += 1) {
+    const a0 = (i / count) * Math.PI * 2 - Math.PI / 2;
+    const a1 = ((i + 1) / count) * Math.PI * 2 - Math.PI / 2;
+    const mid = (a0 + a1) / 2;
+    const x0 = cx + inner * Math.cos(a0);
+    const y0 = cy + inner * Math.sin(a0);
+    const x1 = cx + inner * Math.cos(a1);
+    const y1 = cy + inner * Math.sin(a1);
+    const qx = cx + outer * Math.cos(mid);
+    const qy = cy + outer * Math.sin(mid);
+    d += i === 0 ? `M ${x0.toFixed(2)} ${y0.toFixed(2)} ` : "";
+    d += `Q ${qx.toFixed(2)} ${qy.toFixed(2)} ${x1.toFixed(2)} ${y1.toFixed(2)} `;
+  }
+  return `${d}Z`;
+}
+
+function rimCurl(cx, cy, radius, index, count) {
+  const mid = ((index + 0.5) / count) * Math.PI * 2 - Math.PI / 2;
+  const side = mid + Math.PI / 2;
+  const x = cx + radius * Math.cos(mid);
+  const y = cy + radius * Math.sin(mid);
+  const x1 = x - 5.5 * Math.cos(side) + 1.5 * Math.cos(mid);
+  const y1 = y - 5.5 * Math.sin(side) + 1.5 * Math.sin(mid);
+  const x2 = x + 4.2 * Math.cos(side) - 2.2 * Math.cos(mid);
+  const y2 = y + 4.2 * Math.sin(side) - 2.2 * Math.sin(mid);
+  const qx = x + 1.5 * Math.cos(mid);
+  const qy = y + 1.5 * Math.sin(mid);
+  return `M ${x1.toFixed(2)} ${y1.toFixed(2)} Q ${qx.toFixed(2)} ${qy.toFixed(2)} ${x2.toFixed(2)} ${y2.toFixed(2)}`;
+}
+
+function PotMark() {
+  return (
+    <svg viewBox="0 0 88 72" className="h-20 w-24" aria-hidden="true">
+      <path d="M18 30h52v24a10 10 0 0 1-10 10H28a10 10 0 0 1-10-10V30z" fill="#F4EDE3" />
+      <path d="M12 28h64" stroke="#FBF7F2" strokeWidth="4" strokeLinecap="round" />
+      <path d="M8 32c4 2 6 8 4 12" stroke="#E7D9C8" strokeWidth="3" strokeLinecap="round" fill="none" />
+      <path d="M80 32c-4 2-6 8-4 12" stroke="#E7D9C8" strokeWidth="3" strokeLinecap="round" fill="none" />
+      <path d="M34 28c1-10 6-16 10-16s9 6 10 16" fill="none" stroke="#E7D9C8" strokeWidth="3" />
+      <text x="44" y="52" textAnchor="middle" fill="#3F5C46" fontFamily="Fraunces, Georgia, serif" fontSize="16">15 kg</text>
+    </svg>
+  );
+}
+
+function BuyerSheet() {
+  return (
+    <div>
+      <p className="mt-6 text-sm font-semibold text-clay-700">Pour la direction</p>
+      <h2 className="mt-1 font-serif text-4xl">Ce que le mois économise</h2>
+      <p className="mt-3 max-w-2xl text-ink-soft">
+        Le bon du jour est à {formatEur(CNO_DAY)} de compléments. Sur {MONTH_DAYS} jours, et avec {formatPct(WASTE)} qui ne sont pas mangés, le tableau devient celui-ci.
+      </p>
+      <div className="mt-6 grid gap-4 lg:grid-cols-3">
+        <article className="rounded-3xl bg-white p-6 shadow-card">
+          <p className="text-sm text-ink-soft">Compléments remplacés</p>
+          <p className="mt-2 font-serif text-4xl">{MONTH_BOTTLES.toLocaleString("fr-FR")}</p>
+          <p className="mt-2 text-sm leading-relaxed text-ink-soft">flacons sur le mois. {formatEur(CNO_DAY)} par jour, à {formatEur(CNO.pricePerBottle)} le flacon, pendant {MONTH_DAYS} jours.</p>
+        </article>
+        <article className="rounded-3xl bg-clay-50 p-6 shadow-card">
+          <p className="text-sm text-clay-700">Budget jeté, évité</p>
+          <p className="mt-2 font-serif text-4xl text-clay-700">{formatEur(MONTH_WASTED)}</p>
+          <p className="mt-2 text-sm leading-relaxed text-ink-soft">{formatPct(WASTE)} de {formatEur(CNO_DAY)}, chaque jour. C’est la part du complément qui ne finit pas dans l’assiette.</p>
+        </article>
+        <article className="rounded-3xl bg-sage-800 p-6 text-linen-50 shadow-card">
+          <p className="text-sm text-sage-100">Gramme avalé</p>
+          <p className="text-xs text-sage-100">Cost per Effective Protein</p>
+          <p className="mt-3 font-serif text-4xl">{formatEur(VEG_EFFECTIVE, 3)}</p>
+          <p className="mt-2 text-sm leading-relaxed text-sage-100">contre {formatEur(CNO_EFFECTIVE, 2)} une fois les {formatPct(WASTE)} non consommés. {Math.round(BATCH.proteinG)} g couverts, {formatPct(COMPLIANCE.texturedDishFirst.value)} d’assiettes finies.</p>
+        </article>
+      </div>
+    </div>
+  );
+}
+
+const PLATE = [
+  { id: "full", label: "Tout mangé", share: "100 %", dot: "bg-sage-500", on: "border-sage-500 bg-sage-50" },
+  { id: "half", label: "À moitié", share: "50 %", dot: "bg-honey-500", on: "border-honey-500 bg-honey-100" },
+  { id: "none", label: "Refusé", share: "0 %", dot: "bg-clay-600", on: "border-clay-600 bg-clay-50" },
+];
+
+function CareSheet() {
+  const [selectedId, setSelectedId] = useState("CH_102");
+  const [plates, setPlates] = useState({});
+  const rule = ruleOf(RESIDENTS);
+  const person = RESIDENTS.find((item) => item.id === selectedId) ?? rule;
+  const textureName = person.texture === "mixe" ? "IDDSI 4 · Purée lisse" : "IDDSI 5 · Haché et lubrifié";
+  const plate = plates[person.id];
+
+  return (
+    <div>
+      <p className="mt-6 text-sm font-semibold text-sage-800">Pour le soin</p>
+      <h2 className="mt-1 font-serif text-4xl">Les étiquettes du service</h2>
+      <div className="mt-6 grid items-stretch gap-4 lg:grid-cols-[1.15fr_0.85fr]">
+        <section className="flex h-80 flex-col overflow-hidden rounded-3xl bg-white shadow-card lg:h-0 lg:min-h-full">
+          <div className="flex items-end justify-between gap-4 border-b border-linen-100 px-5 py-4">
+            <div>
+              <p className="text-sm text-ink-soft">Liste de service</p>
+              <h3 className="font-serif text-2xl">{RESIDENTS.length} étiquettes</h3>
+            </div>
+            <p className="text-right text-sm text-ink-soft">Une par personne</p>
+          </div>
+          <div className="min-h-0 flex-1 overflow-y-auto">
+            {RESIDENTS.map((item) => {
+              const selected = item.id === person.id;
+              return (
+                <button
+                  key={item.id}
+                  type="button"
+                  onClick={() => setSelectedId(item.id)}
+                  className={`grid w-full grid-cols-[auto_1fr_auto] items-center gap-3 border-t border-linen-100 px-5 py-2.5 text-left ${
+                    selected ? "bg-sage-50" : "hover:bg-linen-50"
+                  }`}
+                >
+                  <span className="inline-flex h-11 w-11 overflow-hidden rounded-full bg-linen-100">
+                    <ElderFace hair={item.hair} glasses={item.glasses} cloth={item.cloth} compact />
+                  </span>
+                  <span className="min-w-0">
+                    <span className="flex flex-wrap items-center gap-1.5">
+                      <span className="font-semibold">{item.id}</span>
+                      <Tag tone={item.denutrition}>{DENUT_LABEL[item.denutrition]}</Tag>
+                      <Tag>{TEXTURE_LABEL[item.texture]}</Tag>
+                      {item.id === rule.id && <span className="text-xs font-semibold text-clay-700">règle du groupe</span>}
+                    </span>
+                    <span className="mt-0.5 block truncate text-sm text-ink-soft">{item.secteur}</span>
+                  </span>
+                  <span className="text-right text-sm">
+                    <span className="block font-semibold">{item.volume} g</span>
+                    <span className={`block ${item.id === rule.id ? "font-semibold text-clay-700" : "text-ink-soft"}`}>{item.deficit} g</span>
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        </section>
+
+        <article className={`overflow-hidden rounded-3xl bg-white shadow-card ${person.id === rule.id ? "ring-2 ring-clay-400" : ""}`}>
+          <div className={`px-5 pb-3 pt-4 ${person.id === rule.id ? "bg-clay-50" : "bg-linen-50"}`}>
+            <ElderFace hair={person.hair} glasses={person.glasses} cloth={person.cloth} />
+            <div className="text-center">
+              <p className="font-serif text-3xl leading-none">{person.id}</p>
+              <p className="mt-1 text-sm text-ink-soft">{person.secteur}</p>
+              {person.id === rule.id && <p className="mt-1 text-sm font-semibold text-clay-700">Son bol décide pour ce groupe</p>}
+            </div>
+          </div>
+          <div className="p-5">
+            <p className="text-sm text-ink-soft">Étiquette à coller sur le plateau</p>
+            <div className="mt-3 rounded-2xl border-2 border-dashed border-sage-500 bg-sage-50 px-4 py-4">
+              <div className="flex flex-wrap items-center gap-1.5">
+                <Tag tone={person.denutrition}>{DENUT_LABEL[person.denutrition]}</Tag>
+                <Tag>{TEXTURE_LABEL[person.texture]}</Tag>
+              </div>
+              <p className="mt-3 text-sm font-semibold">{textureName}</p>
+              <p className="mt-1 text-sm text-ink-soft">
+                {person.texture === "mixe" ? "Homogène, sans aucun morceau" : "Morceaux ≤ 4 mm, dans une sauce"}
+              </p>
+              <p className="mt-3 flex items-center gap-2 text-sm font-semibold">
+                <PortionBowl grams={person.volume} />
+                {person.volume} g
+              </p>
+              <p className="mt-3 rounded-xl bg-white px-3 py-2 text-sm font-semibold text-sage-800">
+                {formatG(recipeFor(person.volume).proteinG)} g de protéines · déficit {person.deficit} g
+              </p>
+            </div>
+            <div className="mt-4">
+              <p className="text-sm font-semibold">Retour d’assiette</p>
+              <div className="mt-2 grid grid-cols-3 gap-2">
+                {PLATE.map((item) => (
+                  <button
+                    key={item.id}
+                    type="button"
+                    aria-pressed={plate === item.id}
+                    onClick={() => setPlates((current) => ({ ...current, [person.id]: item.id }))}
+                    className={`rounded-2xl border px-2 py-3 text-center ${
+                      plate === item.id ? item.on : "border-linen-200 bg-white hover:bg-linen-50"
+                    }`}
+                  >
+                    <span className={`mx-auto block h-3 w-3 rounded-full ${item.dot}`} />
+                    <span className="mt-2 block text-sm font-semibold leading-tight">{item.label}</span>
+                    <span className="mt-1 block text-xs text-ink-soft">{item.share}</span>
+                  </button>
+                ))}
+              </div>
+              <p className="mt-3 text-xs leading-relaxed text-ink-soft">
+                Les données ajusteront l’algorithme de demain.
+              </p>
+              {plate === "none" && (
+                <p className="mt-2 rounded-2xl bg-clay-50 px-3 py-2 text-xs leading-relaxed text-clay-700">
+                  Refus noté pour {person.id}. Demain, l’algorithme baisse la part de légumineuse de cette personne. La marmite du groupe ne change pas.
+                </p>
+              )}
+            </div>
+          </div>
+        </article>
+      </div>
+    </div>
+  );
+}
+
+function StepEgalim() {
+  const [preview, setPreview] = useState(null);
+
+  return (
+    <div className="animate-in fade-in duration-500">
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
         <div className="max-w-2xl">
           <p className="text-sm font-semibold text-sage-700">Étape 4 · Agribalyse · loi EGAlim</p>
           <h2 className="font-serif text-4xl">Le carbone du repas, prêt pour l’audit</h2>
@@ -768,22 +1408,23 @@ function StepEgalim({ onReset }) {
           </p>
         </div>
         <button
-          onClick={onReset}
-          className="inline-flex shrink-0 items-center gap-2 rounded-full border border-linen-200 bg-white px-4 py-2 text-sm font-semibold text-ink-soft hover:text-ink"
+          type="button"
+          onClick={() => setPreview("egalim")}
+          className="inline-flex shrink-0 items-center gap-2 self-start rounded-full border border-linen-200 bg-white px-4 py-2.5 text-sm font-semibold text-ink hover:bg-linen-50"
         >
-          <RefreshCcw className="h-4 w-4" />
-          Revoir le secteur
+          <Download className="h-4 w-4" />
+          Télécharger la déclaration EGAlim
         </button>
       </div>
 
       <div className="mt-8 grid gap-5 lg:grid-cols-[1.15fr_0.85fr]">
         <article className="rounded-3xl bg-sage-800 p-8 text-linen-50 shadow-card sm:p-10">
           <p className="text-sm text-sage-100">Empreinte du service, face aux protéines animales et aux CNO</p>
-          <p className="mt-4 font-serif text-7xl leading-none sm:text-8xl">−85 %</p>
+          <p className="mt-4 font-serif text-7xl leading-none sm:text-8xl">−{formatPct(CO2_CUT)}</p>
           <p className="mt-4 max-w-md text-sage-100">de CO₂ sur ce scénario de démonstration.</p>
           <div className="mt-8 space-y-4">
             <CarbonRow label="CNO et protéines animales" width="100%" muted />
-            <CarbonRow label="Préparation végétale du jour" width="15%" />
+            <CarbonRow label="Préparation végétale du jour" width={`${Math.round((BATCH.co2Kg / CNO_CO2) * 100)}%`} />
           </div>
         </article>
 
@@ -801,7 +1442,140 @@ function StepEgalim({ onReset }) {
           </p>
         </article>
       </div>
+      {preview && <ExportPreview kind={preview} onClose={() => setPreview(null)} />}
     </div>
+  );
+}
+
+function ExportPreview({ kind, onClose }) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-ink/55 px-4 py-16" role="presentation" onClick={onClose}>
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="export-title"
+        className="w-full max-w-xl"
+        onClick={(event) => event.stopPropagation()}
+      >
+        {kind === "egalim" && <EgalimDeclaration onClose={onClose} />}
+        {kind === "bon" && <PurchaseOrder onClose={onClose} />}
+      </div>
+    </div>
+  );
+}
+
+function ClosePreview({ onClose }) {
+  return (
+    <button type="button" onClick={onClose} className="inline-flex shrink-0 items-center gap-1 rounded-full bg-linen-100 px-3 py-1.5 text-sm font-semibold text-ink">
+      <X className="h-4 w-4" />
+      Fermer
+    </button>
+  );
+}
+
+function declarationText() {
+  return [
+    "Déclaration EGAlim — PulseUp",
+    "Restauration collective · EHPAD",
+    "Octobre 2026 · scénario de démonstration",
+    "",
+    "Ce bordereau reprend les rubriques de la télédéclaration annuelle sur ma cantine (ministère de l’Agriculture). Il ne remplace pas le formulaire officiel.",
+    "",
+    "1. Produits de qualité et durables — objectif légal : 50 % de la valeur d’achat",
+    `Ce service protéiné : ${formatKgFromG(DAY_COUNT * PORTION_G)}, ${formatEur(BATCH.costEur)}.`,
+    `Lentilles corail ${formatKgFromG(BATCH.grams.lentillesCorail)} · 45 %. Avoine ${formatKgFromG(BATCH.grams.avoine)} · 35 %. Légumes racines ${formatKgFromG(BATCH.grams.legumesRacines)} · 20 %.`,
+    "Un végétal conventionnel n’entre pas automatiquement dans les 50 %. Seuls les achats avec un signe officiel (AB, Label Rouge, AOP, HVE, commerce équitable) comptent, sur toutes les factures de l’année.",
+    "",
+    "2. Produits biologiques — objectif légal : 20 %, compris dans les 50 %",
+    "Non renseigné dans ce scénario. Le taux bio se lit sur les factures portant le label AB.",
+    "",
+    "3. Gaspillage alimentaire",
+    "L’établissement doit tenir un diagnostic du gaspillage, à part des achats.",
+    "Le 45 % cité dans l’outil est la part de compléments oraux non consommés (Kayser-Jones, 1998). Ce n’est pas le poids jeté en cuisine.",
+    "",
+    "4. Empreinte carbone — Agribalyse, hors rubrique EGAlim",
+    `−${formatPct(CO2_CUT)} de CO₂ sur ce scénario, face aux CNO et aux protéines animales. Utile au dossier environnemental, pas une ligne du formulaire ma cantine.`,
+    "",
+    "À saisir sur ma-cantine.agriculture.gouv.fr une fois les achats réels branchés.",
+  ].join("\n");
+}
+
+function downloadDeclaration() {
+  const blob = new Blob([declarationText()], { type: "text/plain;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = "declaration-egalim-pulseup.txt";
+  link.click();
+  URL.revokeObjectURL(url);
+}
+
+function EgalimDeclaration({ onClose }) {
+  return (
+    <article className="rounded-sm bg-[#FFFcf7] px-8 py-8 text-ink shadow-card sm:px-12">
+      <div className="flex items-start justify-between gap-4">
+        <p className="text-xs font-semibold uppercase tracking-[0.18em] text-sage-700">Télédéclaration · octobre 2026</p>
+        <ClosePreview onClose={onClose} />
+      </div>
+      <h3 id="export-title" className="mt-3 font-serif text-3xl leading-tight">Déclaration EGAlim</h3>
+      <p className="mt-1 text-sm text-ink-soft">Restauration collective · EHPAD · scénario de démonstration</p>
+      <div className="my-6 h-px bg-linen-200" />
+      <p className="text-sm leading-relaxed text-ink-soft">
+        Les rubriques ci-dessous sont celles de la déclaration annuelle sur ma cantine, le site du ministère de l’Agriculture. Ce bordereau ne remplace pas le formulaire officiel.
+      </p>
+      <ul className="mt-6 space-y-3 text-sm">
+        <li className="rounded-2xl bg-sage-50 px-4 py-3">
+          <p className="font-semibold">Produits de qualité et durables · objectif 50 %</p>
+          <p className="mt-1 leading-relaxed text-ink-soft">
+            Ce service : {formatKgFromG(DAY_COUNT * PORTION_G)}, {formatEur(BATCH.costEur)}, lentilles, avoine et légumes racines.
+            Un végétal sans signe officiel (AB, Label Rouge, AOP, HVE) n’entre pas dans les 50 %. Le taux se calcule sur toutes les factures de l’année.
+          </p>
+        </li>
+        <li className="rounded-2xl bg-sage-50 px-4 py-3">
+          <p className="font-semibold">Produits biologiques · objectif 20 %</p>
+          <p className="mt-1 leading-relaxed text-ink-soft">Non renseigné ici. Le taux bio se lit sur les factures au label AB, et il est compris dans les 50 %.</p>
+        </li>
+        <li className="rounded-2xl bg-sage-50 px-4 py-3">
+          <p className="font-semibold">Gaspillage alimentaire</p>
+          <p className="mt-1 leading-relaxed text-ink-soft">
+            Diagnostic à tenir à part. Le 45 % de l’outil est la part de compléments non consommés, pas le poids jeté en cuisine.
+          </p>
+        </li>
+        <li className="rounded-2xl bg-linen-50 px-4 py-3">
+          <p className="font-semibold">Empreinte Agribalyse · hors formulaire</p>
+          <p className="mt-1 leading-relaxed text-ink-soft">
+            −{formatPct(CO2_CUT)} de CO₂ sur ce scénario. Utile au dossier environnemental, ce n’est pas une ligne de ma cantine.
+          </p>
+        </li>
+      </ul>
+      <button
+        type="button"
+        onClick={downloadDeclaration}
+        className="mt-6 inline-flex items-center gap-2 rounded-full bg-sage-700 px-5 py-2.5 text-sm font-bold text-white hover:bg-sage-800"
+      >
+        <Download className="h-4 w-4" />
+        Télécharger le fichier
+      </button>
+      <p className="mt-4 text-xs leading-relaxed text-ink-soft">À saisir sur ma-cantine.agriculture.gouv.fr une fois les achats réels branchés.</p>
+    </article>
+  );
+}
+
+function PurchaseOrder({ onClose }) {
+  return (
+    <article className="rounded-sm bg-white px-8 py-8 text-ink shadow-card sm:px-12">
+      <div className="flex items-start justify-between gap-4">
+        <p className="text-xs font-semibold uppercase tracking-[0.18em] text-clay-700">Bon d’achat · service du jour</p>
+        <ClosePreview onClose={onClose} />
+      </div>
+      <h3 id="export-title" className="mt-3 font-serif text-3xl leading-tight">{formatKgFromG(DAY_COUNT * PORTION_G)} · {formatEur(BATCH.costEur)}</h3>
+      <ul className="mt-6 space-y-2 text-sm">
+        <OrderLine name="Lentilles corail" qty={formatKgFromG(BATCH.grams.lentillesCorail)} share="45 %" />
+        <OrderLine name="Avoine" qty={formatKgFromG(BATCH.grams.avoine)} share="35 %" />
+        <OrderLine name="Légumes racines" qty={formatKgFromG(BATCH.grams.legumesRacines)} share="20 %" />
+      </ul>
+      <p className="mt-6 text-xs leading-relaxed text-ink-soft">45 portions. Scénario de démonstration, à transmettre à l’approvisionnement.</p>
+    </article>
   );
 }
 
@@ -884,21 +1658,6 @@ function AuditPoint({ title, children }) {
   );
 }
 
-function IntakeBar({ label, value, width, tone }) {
-  const bar = tone === "clay" ? "bg-clay-400" : "bg-sage-500";
-  return (
-    <li>
-      <div className="mb-1 flex items-baseline justify-between gap-3 text-sm">
-        <span>{label}</span>
-        <span className="font-serif text-xl text-ink">{value}</span>
-      </div>
-      <div className="h-2.5 overflow-hidden rounded-full bg-linen-100">
-        <div className={`h-full rounded-full ${bar}`} style={{ width }} />
-      </div>
-    </li>
-  );
-}
-
 function OrderLine({ name, qty, share }) {
   return (
     <li className="flex items-center justify-between rounded-xl bg-linen-50 px-3 py-2">
@@ -910,14 +1669,3 @@ function OrderLine({ name, qty, share }) {
   );
 }
 
-function Recipe({ name, share, swatch }) {
-  return (
-    <li className="flex items-center justify-between">
-      <span className="flex items-center gap-2">
-        <span className={`h-2.5 w-2.5 rounded-full ${swatch}`} />
-        {name}
-      </span>
-      <span className="font-semibold text-sage-800">{share}</span>
-    </li>
-  );
-}
