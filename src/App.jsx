@@ -7,6 +7,29 @@ import {
   RefreshCcw,
   Sprout,
 } from "lucide-react";
+import { CNO, COMPLIANCE } from "./data/references";
+import {
+  co2AvoidedPct,
+  cnoCo2PerBottleKg,
+  coverageRate,
+  effectiveProteinCost,
+  recipeFor,
+} from "./lib/nutrition";
+
+function formatEur(value, decimals = 0) {
+  return `${value.toLocaleString("fr-FR", {
+    minimumFractionDigits: decimals,
+    maximumFractionDigits: decimals,
+  })} €`;
+}
+
+function formatPct(ratio) {
+  return `${Math.round(ratio * 100)} %`;
+}
+
+function pctWidth(ratio) {
+  return `${Math.round(ratio * 100)}%`;
+}
 
 const FLOW = [
   { id: 1, label: "Résidents" },
@@ -104,6 +127,9 @@ function buildResidents() {
 }
 
 const RESIDENTS = buildResidents();
+const ALL_DEFICIT_G = RESIDENTS.reduce((sum, item) => sum + item.deficit, 0);
+const REFERENCE_PORTION_G = 120;
+const REFERENCE_RECIPE = recipeFor(REFERENCE_PORTION_G);
 
 const FILTERS = [
   { id: "all", label: "Tous" },
@@ -160,7 +186,7 @@ const SOLVER = [
   },
   {
     title: "Recette retenue",
-    text: "45 % lentilles corail, 35 % avoine, 20 % légumes racines. Leucine couverte, volume ≤ 120 g.",
+    text: `45 % lentilles corail, 35 % avoine, 20 % légumes racines. ${REFERENCE_RECIPE.proteinG.toFixed(1)} g de protéines pour un bol de ${REFERENCE_PORTION_G} g (Ciqual 2025).`,
   },
 ];
 
@@ -231,23 +257,33 @@ export default function CantineShift() {
 }
 
 function StepContext({ onNext }) {
+  const wastedShare = 1 - COMPLIANCE.cno.value;
+  const cnoLabelCost = CNO.pricePerBottle / CNO.proteinPerBottle;
+  const cnoEffectiveCost = effectiveProteinCost(CNO.pricePerBottle, CNO.proteinPerBottle, COMPLIANCE.cno.value);
+  const vegEffectiveCost = effectiveProteinCost(
+    REFERENCE_RECIPE.costEur,
+    REFERENCE_RECIPE.proteinG,
+    COMPLIANCE.texturedDishFirst.value,
+  );
+  const cheaperFactor = cnoEffectiveCost / vegEffectiveCost;
+
   return (
     <div className="animate-in fade-in slide-in-from-bottom-4 duration-700">
       <section className="grid items-stretch gap-5 lg:grid-cols-[0.9fr_1.1fr]">
         <article className="rounded-3xl bg-clay-700 p-7 text-linen-50 shadow-card sm:p-9">
           <p className="text-sm font-semibold uppercase tracking-[0.16em] text-clay-100">Le paradoxe du repas</p>
-          <p className="mt-4 font-serif text-8xl leading-none sm:text-9xl">48 %</p>
+          <p className="mt-4 font-serif text-8xl leading-none sm:text-9xl">{formatPct(wastedShare)}</p>
           <h2 className="mt-4 font-serif text-3xl leading-tight sm:text-4xl">
-            La moitié du budget part à la poubelle.
+            Près de la moitié du budget part à la poubelle.
           </h2>
           <p className="mt-4 max-w-md text-base leading-relaxed text-clay-100">
-            Étude hospitalière canadienne : 2,4 compléments oraux commandés par jour, 1,3 réellement pris.
-            L’EHPAD paie le complément au prix fort, puis jette près de la moitié de ce budget repas.
+            Étude EHPAD (Kayser-Jones et al., 1998) : 2,4 compléments oraux commandés par jour, {(2.4 * COMPLIANCE.cno.value).toFixed(1).replace(".", ",")} réellement pris.
+            L’EHPAD paie le complément au prix fort, puis jette {formatPct(wastedShare)} de ce budget repas.
           </p>
         </article>
 
         <article className="rounded-3xl bg-white p-7 shadow-card sm:p-8">
-          <p className="text-sm font-semibold text-sage-700">CHU de Dijon · patients de 87 ans</p>
+          <p className="text-sm font-semibold text-sage-700">Compliance CNO vs texture d’assiette</p>
           <h2 className="mt-2 font-serif text-3xl leading-tight">
             Le plat enrichi est fini. Le complément, non.
           </h2>
@@ -255,9 +291,39 @@ function StepContext({ onNext }) {
             Le complément n’est pas un repas. Une crème enrichie, donc une vraie texture d’assiette, est terminée bien plus souvent.
           </p>
           <ul className="mt-5 space-y-3">
-            <IntakeBar label="CNO, entièrement bu" value="61 %" width="61%" tone="clay" />
-            <IntakeBar label="Crème enrichie, premier bol" value="94 %" width="94%" tone="sage" />
-            <IntakeBar label="Même crème, deuxième bol" value="84 %" width="84%" tone="sage" />
+            <IntakeBar
+              label={
+                <>
+                  CNO, entièrement bu
+                  <SourceNote text={COMPLIANCE.cno.source} />
+                </>
+              }
+              value={formatPct(COMPLIANCE.cno.value)}
+              width={pctWidth(COMPLIANCE.cno.value)}
+              tone="clay"
+            />
+            <IntakeBar
+              label={
+                <>
+                  Crème enrichie, premier bol
+                  <SourceNote text={COMPLIANCE.texturedDishFirst.source} assumption />
+                </>
+              }
+              value={formatPct(COMPLIANCE.texturedDishFirst.value)}
+              width={pctWidth(COMPLIANCE.texturedDishFirst.value)}
+              tone="sage"
+            />
+            <IntakeBar
+              label={
+                <>
+                  Même crème, deuxième bol
+                  <SourceNote text={COMPLIANCE.texturedDishSecond.source} assumption />
+                </>
+              }
+              value={formatPct(COMPLIANCE.texturedDishSecond.value)}
+              width={pctWidth(COMPLIANCE.texturedDishSecond.value)}
+              tone="sage"
+            />
           </ul>
         </article>
       </section>
@@ -266,11 +332,13 @@ function StepContext({ onNext }) {
         <p className="text-sm font-semibold text-sage-700">Coût par gramme de protéine avalé</p>
         <p className="mt-1 text-xs font-semibold uppercase tracking-[0.14em] text-ink-soft">Cost per Effective Protein</p>
         <p className="mt-3 max-w-3xl font-serif text-2xl leading-snug text-ink sm:text-3xl">
-          0,20 € sur l’étiquette. 0,38 € une fois les 48 % jetés.
+          {formatEur(cnoLabelCost, 2)} sur l’étiquette. {formatEur(cnoEffectiveCost, 2)} une fois les {formatPct(wastedShare)} jetés.
         </p>
         <p className="mt-3 max-w-3xl text-sm leading-relaxed text-ink-soft">
-          Une bouteille à 2 € pour 10 g affiche 0,20 €/g. Il n’en reste que 52 % dans l’assiette, donc le gramme vraiment avalé coûte 0,38 €.
-          Le bon de commande compare ensuite ce prix à la préparation végétale, finie à 94 % au lieu de 61 %.
+          Une bouteille à {formatEur(CNO.pricePerBottle)} pour {CNO.proteinPerBottle} g affiche {formatEur(cnoLabelCost, 2)}/g.
+          Avec {formatPct(COMPLIANCE.cno.value)} réellement consommé (Kayser-Jones, 1998), le gramme vraiment avalé coûte {formatEur(cnoEffectiveCost, 2)}.
+          La préparation végétale, finie à {formatPct(COMPLIANCE.texturedDishFirst.value)} selon notre hypothèse de scénario, revient à {formatEur(vegEffectiveCost, 3)}/g —
+          {" "}{cheaperFactor.toFixed(1)}× moins cher au gramme avalé.
         </p>
       </section>
 
@@ -300,6 +368,8 @@ function StepResidents({ onNext }) {
   const hacheCount = visible.filter((item) => item.texture === "hache").length;
   const fibreFloor = visible.some((item) => item.fibre === "faible") ? "faible" : "moyenne";
   const fibrePerson = visible.filter((item) => item.fibre === fibreFloor).sort((a, b) => a.volume - b.volume)[0];
+  const groupRecipe = recipeFor(rule.volume);
+  const groupCoverage = coverageRate(groupRecipe.proteinG * visible.length, deficitSum);
 
   useEffect(() => {
     const next = RESIDENTS.filter((item) => matchesResident(item, filter));
@@ -454,6 +524,10 @@ function StepResidents({ onNext }) {
           <div>
             <p className="text-sm font-semibold text-ink-soft">Regroupement IDDSI</p>
             <p className="font-serif text-3xl text-sage-800">{deficitSum} g à combler</p>
+            <p className="mt-1 flex items-center text-sm text-ink-soft">
+              Recette à {rule.volume} g : {groupRecipe.proteinG.toFixed(1)} g de protéines/portion × {visible.length} → {formatPct(groupCoverage)} du déficit comblé
+              <SourceNote text="Ciqual 2025 (ANSES) : lentille corail cuite, flocons d'avoine, carotte/navet cuits" />
+            </p>
           </div>
           <p className="max-w-md text-sm text-ink-soft">
             Les niveaux 0 à 2 concernent les boissons. IDDSI 4 : purée sans morceau. IDDSI 5 : particules de 4 mm au plus, dans une sauce.
@@ -487,6 +561,19 @@ function StepResidents({ onNext }) {
         </button>
       </div>
     </div>
+  );
+}
+
+function SourceNote({ text, assumption = false }) {
+  return (
+    <span
+      title={text}
+      className={`ml-1.5 inline-flex h-4 w-4 shrink-0 cursor-help items-center justify-center rounded-full text-[10px] font-bold ${
+        assumption ? "bg-honey-100 text-[#8C5340]" : "bg-sage-100 text-sage-700"
+      }`}
+    >
+      {assumption ? "?" : "i"}
+    </span>
   );
 }
 
@@ -619,7 +706,27 @@ function StepOptimizing({ onComplete }) {
   );
 }
 
+function formatKgFromG(grams) {
+  return `${(grams / 1000).toLocaleString("fr-FR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} kg`;
+}
+
 function StepMetiers({ onNext }) {
+  const residentCount = RESIDENTS.length;
+  const totalVolumeG = residentCount * REFERENCE_PORTION_G;
+  const batchRecipe = recipeFor(totalVolumeG);
+  const cnoTotal = residentCount * CNO.pricePerBottle;
+  const vegTotal = batchRecipe.costEur;
+  const vegPerResident = vegTotal / residentCount;
+  const savingsPct = 1 - vegTotal / cnoTotal;
+  const cnoLabelCost = CNO.pricePerBottle / CNO.proteinPerBottle;
+  const cnoEffectiveCost = effectiveProteinCost(CNO.pricePerBottle, CNO.proteinPerBottle, COMPLIANCE.cno.value);
+  const vegEffectiveCost = effectiveProteinCost(
+    REFERENCE_RECIPE.costEur,
+    REFERENCE_RECIPE.proteinG,
+    COMPLIANCE.texturedDishFirst.value,
+  );
+  const groupCoverage = coverageRate(batchRecipe.proteinG, ALL_DEFICIT_G);
+
   return (
     <div className="animate-in fade-in duration-500">
       <div className="max-w-2xl">
@@ -638,17 +745,19 @@ function StepMetiers({ onNext }) {
           </div>
           <div className="p-5">
             <p className="text-sm text-ink-soft">Bon de commande</p>
-            <h3 className="font-serif text-2xl leading-tight">150 € deviennent 12 €</h3>
+            <h3 className="font-serif text-2xl leading-tight">
+              {formatEur(cnoTotal)} deviennent {formatEur(vegTotal)}
+            </h3>
             <div className="mt-4 space-y-2">
               <div className="rounded-2xl bg-clay-50 px-4 py-3">
                 <p className="text-sm text-clay-700">CNO du jour</p>
-                <p className="font-serif text-3xl text-clay-700 line-through decoration-clay-400">150 €</p>
-                <p className="text-sm text-ink-soft">3,33 € / résident</p>
+                <p className="font-serif text-3xl text-clay-700 line-through decoration-clay-400">{formatEur(cnoTotal)}</p>
+                <p className="text-sm text-ink-soft">{formatEur(CNO.pricePerBottle, 2)} / résident</p>
               </div>
               <div className="rounded-2xl bg-sage-50 px-4 py-3">
                 <p className="text-sm text-sage-800">Préparation végétale</p>
-                <p className="font-serif text-3xl text-sage-800">12 €</p>
-                <p className="text-sm text-sage-700">0,27 € / résident · achat −92 %</p>
+                <p className="font-serif text-3xl text-sage-800">{formatEur(vegTotal)}</p>
+                <p className="text-sm text-sage-700">{formatEur(vegPerResident, 2)} / résident · achat −{formatPct(savingsPct)}</p>
               </div>
             </div>
             <div className="mt-4 rounded-2xl bg-linen-50 px-4 py-3">
@@ -657,26 +766,31 @@ function StepMetiers({ onNext }) {
               <div className="mt-2 grid grid-cols-2 gap-3">
                 <div>
                   <p className="text-xs text-clay-700">CNO</p>
-                  <p className="font-serif text-2xl text-clay-700">0,38 €</p>
-                  <p className="text-xs leading-snug text-ink-soft">étiquette 0,20 €, puis 48 % jetés</p>
+                  <p className="font-serif text-2xl text-clay-700">{formatEur(cnoEffectiveCost, 2)}</p>
+                  <p className="text-xs leading-snug text-ink-soft">
+                    étiquette {formatEur(cnoLabelCost, 2)}, puis {formatPct(1 - COMPLIANCE.cno.value)} non consommés
+                  </p>
                 </div>
                 <div>
                   <p className="text-xs text-sage-800">Préparation</p>
-                  <p className="font-serif text-2xl text-sage-800">0,018 €</p>
-                  <p className="text-xs leading-snug text-ink-soft">704 g couverts, 94 % d’assiettes finies</p>
+                  <p className="font-serif text-2xl text-sage-800">{formatEur(vegEffectiveCost, 3)}</p>
+                  <p className="text-xs leading-snug text-ink-soft">
+                    {Math.round(batchRecipe.proteinG)} g couverts, {formatPct(COMPLIANCE.texturedDishFirst.value)} d’assiettes finies
+                  </p>
                 </div>
               </div>
-              <p className="mt-2 text-xs leading-relaxed text-ink-soft">
-                Dijon : 61 % des CNO bus en entier, 94 % pour une texture de plat. Ici, 12 € couvrent le déficit du groupe.
+              <p className="mt-2 flex items-start gap-1 text-xs leading-relaxed text-ink-soft">
+                Kayser-Jones (1998) : {formatPct(COMPLIANCE.cno.value)} des CNO consommés en moyenne, {formatPct(COMPLIANCE.texturedDishFirst.value)} pour une texture de plat (hypothèse). Ici, {formatEur(vegTotal)} couvrent {formatPct(groupCoverage)} du déficit du groupe.
+                <SourceNote text="Hypothèse de scénario : taux de finition d'une texture d'assiette, non publié" assumption />
               </p>
             </div>
             <ul className="mt-4 space-y-2 text-sm">
-              <OrderLine name="Lentilles corail" qty="2,43 kg" share="45 %" />
-              <OrderLine name="Avoine" qty="1,89 kg" share="35 %" />
-              <OrderLine name="Légumes racines" qty="1,08 kg" share="20 %" />
+              <OrderLine name="Lentilles corail" qty={formatKgFromG(batchRecipe.grams.lentillesCorail)} share="45 %" />
+              <OrderLine name="Avoine" qty={formatKgFromG(batchRecipe.grams.avoine)} share="35 %" />
+              <OrderLine name="Légumes racines" qty={formatKgFromG(batchRecipe.grams.legumesRacines)} share="20 %" />
             </ul>
             <p className="mt-3 text-xs leading-relaxed text-ink-soft">
-              45 portions × 120 g = 5,4 kg. Scénario de démonstration.
+              {residentCount} portions × {REFERENCE_PORTION_G} g = {formatKgFromG(totalVolumeG)}. Scénario de démonstration.
             </p>
           </div>
         </article>
@@ -757,6 +871,13 @@ function StepMetiers({ onNext }) {
 }
 
 function StepEgalim({ onReset }) {
+  const residentCount = RESIDENTS.length;
+  const totalVolumeG = residentCount * REFERENCE_PORTION_G;
+  const batchRecipe = recipeFor(totalVolumeG);
+  const cnoCo2TotalKg = residentCount * cnoCo2PerBottleKg();
+  const avoidedPct = co2AvoidedPct(cnoCo2TotalKg, batchRecipe.co2Kg);
+  const vegShareOfBaseline = batchRecipe.co2Kg / cnoCo2TotalKg;
+
   return (
     <div className="animate-in fade-in duration-500">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
@@ -778,12 +899,15 @@ function StepEgalim({ onReset }) {
 
       <div className="mt-8 grid gap-5 lg:grid-cols-[1.15fr_0.85fr]">
         <article className="rounded-3xl bg-sage-800 p-8 text-linen-50 shadow-card sm:p-10">
-          <p className="text-sm text-sage-100">Empreinte du service, face aux protéines animales et aux CNO</p>
-          <p className="mt-4 font-serif text-7xl leading-none sm:text-8xl">−85 %</p>
+          <p className="flex items-center text-sm text-sage-100">
+            Empreinte du service, face aux protéines animales et aux CNO
+            <SourceNote text="Agribalyse (ADEME) pour les ingrédients ; le CNO pharmaceutique n'est pas catalogué Agribalyse, proxy produit laitier protéiné" assumption />
+          </p>
+          <p className="mt-4 font-serif text-7xl leading-none sm:text-8xl">−{formatPct(avoidedPct)}</p>
           <p className="mt-4 max-w-md text-sage-100">de CO₂ sur ce scénario de démonstration.</p>
           <div className="mt-8 space-y-4">
             <CarbonRow label="CNO et protéines animales" width="100%" muted />
-            <CarbonRow label="Préparation végétale du jour" width="15%" />
+            <CarbonRow label="Préparation végétale du jour" width={pctWidth(vegShareOfBaseline)} />
           </div>
         </article>
 
