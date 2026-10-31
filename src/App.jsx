@@ -290,7 +290,7 @@ export default function CantineShift() {
         )}
         {step === 3 && <StepMetiers onNext={() => goTo(4)} />}
         {step === 4 && <StepEgalim onNext={() => goTo(5)} />}
-        {step === 5 && <StepSources dayCount={DAY_COUNT} groupDeficit={GROUP_DEFICIT} />}
+        {step === 5 && <StepSources />}
       </main>
     </div>
   );
