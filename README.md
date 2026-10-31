@@ -9,8 +9,8 @@ Nothing to configure. No API key, no backend. The app runs in the browser on the
 Install [Node.js 20.19 or newer](https://nodejs.org) (Node 22 is fine). Then, in a terminal:
 
 ```bash
-git clone https://github.com/Yihuan0301/hackthefork_2026_Ve-ge-Soin.git
-cd hackthefork_2026_Ve-ge-Soin
+git clone https://github.com/Yihuan0301/hackthefork_2026_PulseUp.git
+cd hackthefork_2026_PulseUp
 npm install
 npm run dev
 ```
