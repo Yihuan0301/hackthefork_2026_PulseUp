@@ -17,6 +17,7 @@ import {
   effectiveProteinCost,
   recipeFor,
 } from "./lib/nutrition";
+import StepSources from "./StepSources";
 
 const FLOW = [
   { id: 1, label: "Résidents" },
@@ -250,6 +251,23 @@ export default function CantineShift() {
                 {index < FLOW.length - 1 && <span className="text-linen-200">/</span>}
               </li>
             ))}
+            <li className="ml-2">
+              <button
+                type="button"
+                onClick={() => goTo(5)}
+                disabled={!residentImport.ready}
+                aria-current={step === 5 ? "page" : undefined}
+                className={`whitespace-nowrap rounded-full border px-3 py-1.5 text-sm font-semibold ${
+                  !residentImport.ready
+                    ? "cursor-not-allowed border-linen-200 bg-transparent text-ink-soft/40"
+                    : step === 5
+                      ? "border-ink bg-white text-ink"
+                      : "border-linen-200 bg-white text-ink-soft hover:border-ink hover:text-ink"
+                }`}
+              >
+                Méthode
+              </button>
+            </li>
           </ol>
         </div>
       </header>
@@ -271,7 +289,8 @@ export default function CantineShift() {
           />
         )}
         {step === 3 && <StepMetiers onNext={() => goTo(4)} />}
-        {step === 4 && <StepEgalim />}
+        {step === 4 && <StepEgalim onNext={() => goTo(5)} />}
+        {step === 5 && <StepSources dayCount={DAY_COUNT} groupDeficit={GROUP_DEFICIT} />}
       </main>
     </div>
   );
@@ -1394,7 +1413,7 @@ function CareSheet() {
   );
 }
 
-function StepEgalim() {
+function StepEgalim({ onNext }) {
   const [preview, setPreview] = useState(null);
 
   return (
@@ -1407,14 +1426,20 @@ function StepEgalim() {
             Une fois les trois feuilles parties en cuisine et en chambre, le même calcul alimente le bordereau environnemental.
           </p>
         </div>
-        <button
-          type="button"
-          onClick={() => setPreview("egalim")}
-          className="inline-flex shrink-0 items-center gap-2 self-start rounded-full border border-linen-200 bg-white px-4 py-2.5 text-sm font-semibold text-ink hover:bg-linen-50"
-        >
-          <Download className="h-4 w-4" />
-          Télécharger la déclaration EGAlim
-        </button>
+        <div className="flex shrink-0 flex-wrap items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setPreview("egalim")}
+            className="inline-flex items-center gap-2 rounded-full border border-linen-200 bg-white px-4 py-2.5 text-sm font-semibold text-ink hover:bg-linen-50"
+          >
+            <Download className="h-4 w-4" />
+            Télécharger la déclaration EGAlim
+          </button>
+          <StepAction onClick={onNext}>
+            Voir la méthode
+            <ArrowRight className="h-4 w-4" />
+          </StepAction>
+        </div>
       </div>
 
       <div className="mt-8 grid gap-5 lg:grid-cols-[1.15fr_0.85fr]">
